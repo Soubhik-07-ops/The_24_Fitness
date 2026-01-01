@@ -71,7 +71,7 @@ export default function Hero() {
                     transition={{ duration: 0.8 }}
                 >
                     <Star size={16} color="#f97316" className={styles.badgeIcon} />
-                    <span className={styles.badgeText}>#1 Rated Gym in the City</span>
+                    <span className={styles.badgeText}>#1 Rated Gym in Dhanbad</span>
                 </motion.div>
 
                 {/* Main Heading */}
@@ -93,7 +93,7 @@ export default function Hero() {
                     transition={{ duration: 0.8, delay: 0.4 }}
                 >
                     Transform your body, mind, and life at our premium{' '}
-                    <span className={styles.highlight}>24 fitness sanctuary</span>.
+                    <span className={styles.highlight}>24 fitness sanctuary in Dhanbad</span>.
                     Where every hour is your hour to shine.
                 </motion.p>
 

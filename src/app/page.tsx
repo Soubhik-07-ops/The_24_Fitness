@@ -11,9 +11,10 @@ import Stats from '@/components/Stats/Stats';
 export default function Home() {
   const structuredData = {
     '@context': 'https://schema.org',
-    '@type': 'Gym',
+    '@type': ['Gym', 'LocalBusiness', 'HealthAndBeautyBusiness'],
     name: 'The 24 Fitness Gym',
-    description: 'Premium Gym & Fitness Center with 24/6 access, expert trainers, and modern equipment',
+    alternateName: ['24 Fitness Gym Dhanbad', 'The 24 Fitness Dhanbad', '24 Fitness Digwadih'],
+    description: 'The 24 Fitness Gym in Dhanbad - Premium Gym & Fitness Center in Digwadih with 24/6 access, expert trainers, and modern equipment. Best gym in Dhanbad, Jharkhand.',
     url: 'https://www.the24fitness.co.in',
     logo: 'https://www.the24fitness.co.in/Brand LOGO.png',
     image: 'https://www.the24fitness.co.in/Brand LOGO.png',
@@ -21,12 +22,24 @@ export default function Home() {
       '@type': 'PostalAddress',
       streetAddress: 'Digwadih No. 10, near Gobinda sweets, Old SBI Building',
       addressLocality: 'Digwadih',
+      addressRegion: 'Jharkhand',
+      postalCode: '828109',
       addressCountry: 'IN',
+    },
+    geo: {
+      '@type': 'GeoCoordinates',
+      latitude: '23.8013',
+      longitude: '86.4304',
     },
     telephone: '8084548055',
     email: 'The24fitness8055@gmail.com',
-    openingHours: 'Mo-Sa 00:00-23:59',
+    openingHours: ['Mo-Sa 00:00-23:59'],
     priceRange: '₹₹',
+    areaServed: {
+      '@type': 'City',
+      name: 'Dhanbad',
+    },
+    keywords: 'gym dhanbad, fitness center dhanbad, 24 fitness gym, gym digwadih, best gym dhanbad',
     sameAs: [
       // Add your social media links here when available
     ],
