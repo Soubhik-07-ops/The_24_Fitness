@@ -11,6 +11,11 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata = {
   title: 'The 24 Fitness Gym - Premium Gym & Fitness Center',
   description: 'Join The 24 Fitness Gym for premium gym facilities, personal training, and fitness classes',
+  icons: {
+    icon: '/icon.png',
+    shortcut: '/icon.png',
+    apple: '/icon.png',
+  },
 };
 
 export default function RootLayout({
