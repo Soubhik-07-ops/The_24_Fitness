@@ -310,7 +310,7 @@ export default function MyMembershipsPage() {
                                                                 <div key={addon.id} style={{ marginBottom: '4px' }}>
                                                                     {addon.addon_type === 'in_gym' ? 'In-Gym Access' :
                                                                         addon.addon_type === 'personal_trainer' ?
-                                                                            `Personal Trainer${addon.trainers ? ` (${addon.trainers.name})` : ''}` :
+                                                                            `Personal Trainer${addon.trainers ? ` (${Array.isArray(addon.trainers) ? addon.trainers[0]?.name : addon.trainers.name})` : ''}` :
                                                                             addon.addon_type} - ₹{addonPrice.toLocaleString()}
                                                                 </div>
                                                             )

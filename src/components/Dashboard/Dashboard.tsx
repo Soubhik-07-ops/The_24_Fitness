@@ -1022,7 +1022,7 @@ export default function Dashboard() {
                                                     )}
                                                     <div className={styles.chartMeta}>
                                                         <span><Calendar size={12} /> {formatDate(chart.created_at)}</span>
-                                                        <span>By: {chart.created_by && chart.trainers ? chart.trainers.name : 'Admin'}</span>
+                                                        <span>By: {chart.created_by && chart.trainers ? (Array.isArray(chart.trainers) ? chart.trainers[0]?.name : chart.trainers.name) : 'Admin'}</span>
                                                     </div>
                                                     {chart.file_url && (
                                                         <a

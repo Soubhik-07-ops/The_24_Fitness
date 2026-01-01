@@ -254,9 +254,9 @@ export async function GET(
                 timeline.push({
                     type: 'trainer_assignment',
                     date: assignment.created_at,
-                    title: `Trainer Assigned: ${assignment.trainers?.name || 'Unknown'}`,
+                    title: `Trainer Assigned: ${assignment.trainers?.[0]?.name || 'Unknown'}`,
                     description: `Status: ${displayStatus} - Period End: ${assignment.period_end ? new Date(assignment.period_end).toLocaleDateString() : 'N/A'}`,
-                    trainerName: assignment.trainers?.name,
+                    trainerName: assignment.trainers?.[0]?.name,
                     status: displayStatus,
                     periodEnd: assignment.period_end,
                     icon: '👨‍🏫',

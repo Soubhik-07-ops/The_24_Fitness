@@ -233,9 +233,9 @@ export async function GET(
                     timeline.push({
                         type: 'trainer_addon',
                         date: addon.created_at,
-                        title: `Trainer Addon: ${addon.trainers.name}`,
+                        title: `Trainer Addon: ${Array.isArray(addon.trainers) ? addon.trainers[0]?.name : addon.trainers.name}`,
                         description: `Status: ${addon.status} - ₹${addon.price?.toLocaleString() || '0'}`,
-                        trainerName: addon.trainers.name,
+                        trainerName: Array.isArray(addon.trainers) ? addon.trainers[0]?.name : addon.trainers.name,
                         status: addon.status,
                         icon: '👤',
                         color: addon.status === 'active' ? '#10b981' : '#f59e0b'

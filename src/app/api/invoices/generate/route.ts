@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
         // Find trainer addon
         const trainerAddon = membershipAddons?.find((addon: any) => addon.addon_type === 'personal_trainer')
         const trainerAddonPrice = trainerAddon ? (parseFloat(trainerAddon.price) || 0) : 0
-        const trainerName = trainerAddon?.trainers?.name || membership.trainers?.name || membership.trainer_name || undefined
+        const trainerName = trainerAddon?.trainers?.[0]?.name || membership.trainers?.[0]?.name || membership.trainer_name || undefined
 
         // Calculate admission fee and monthly fee for in-gym plans
         let admissionFee = 0
@@ -236,7 +236,7 @@ export async function POST(request: NextRequest) {
                 plan_mode: membership.plan_mode,
                 duration_months: membership.duration_months,
                 trainer_id: membership.trainer_id || null,
-                trainer_name: membership.trainers?.name || membership.trainer_name || null,
+                trainer_name: membership.trainers?.[0]?.name || membership.trainer_name || null,
                 user_id: membership.user_id,
                 user_name: profile?.full_name || user?.email || 'User',
                 user_email: user?.email || '',
