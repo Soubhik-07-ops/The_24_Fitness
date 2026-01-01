@@ -1,0 +1,26 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://www.the24fitness.co.in/sitemap.xml
+
+# Disallow admin and API routes
+Disallow: /admin/
+Disallow: /api/
+Disallow: /trainer/
+Disallow: /dashboard/
+Disallow: /profile/
+Disallow: /membership/form
+Disallow: /membership/payment
+Disallow: /messages/
+
+# Allow public pages
+Allow: /
+Allow: /membership
+Allow: /trainers
+Allow: /offers
+Allow: /contact
+Allow: /features
+Allow: /classes/*
+
