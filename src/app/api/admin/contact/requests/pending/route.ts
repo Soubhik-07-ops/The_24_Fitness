@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
         try {
             const { data: joined, error: joinErr } = await supabaseAdmin
                 .from('contact_requests')
-                .select('id, user_id, subject, message, status, created_at, profiles(full_name)')
+                .select('id, user_id, subject, message, status, created_at, profiles(full_name, email)')
                 .eq('status', 'pending')
                 .order('created_at', { ascending: true });
             if (joinErr) throw joinErr;
@@ -28,7 +28,8 @@ export async function GET(request: NextRequest) {
                 message: r.message,
                 status: r.status,
                 created_at: r.created_at,
-                full_name: r.profiles?.full_name ?? null
+                full_name: r.profiles?.full_name ?? null,
+                email: r.profiles?.email ?? null
             }));
             return NextResponse.json({ requests: mapped });
         } catch (_ignored) {
@@ -41,19 +42,20 @@ export async function GET(request: NextRequest) {
 
             const list = requests || [];
             const userIds = Array.from(new Set(list.map((r: any) => r.user_id))).filter(Boolean);
-            let profiles: Record<string, { full_name: string | null }> = {};
+            let profiles: Record<string, { full_name: string | null; email: string | null }> = {};
             if (userIds.length > 0) {
                 const { data: profs } = await supabaseAdmin
                     .from('profiles')
-                    .select('id, full_name')
+                    .select('id, full_name, email')
                     .in('id', userIds as string[]);
                 if (profs) {
-                    profiles = Object.fromEntries(profs.map((p: any) => [p.id, { full_name: p.full_name }]));
+                    profiles = Object.fromEntries(profs.map((p: any) => [p.id, { full_name: p.full_name, email: p.email }]));
                 }
             }
             const hydrated = list.map((r: any) => ({
                 ...r,
-                full_name: profiles[r.user_id]?.full_name || null
+                full_name: profiles[r.user_id]?.full_name || null,
+                email: profiles[r.user_id]?.email || null
             }));
             return NextResponse.json({ requests: hydrated });
         }

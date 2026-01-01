@@ -340,10 +340,31 @@
     gap: 0.5rem;
     font-weight: 600;
     color: #d1d5db;
+    flex-wrap: wrap;
 }
 
 .label svg {
     color: #f97316;
+}
+
+.readOnlyBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-left: auto;
+    padding: 0.25rem 0.5rem;
+    background: rgba(107, 114, 128, 0.2);
+    border: 1px solid rgba(107, 114, 128, 0.3);
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    font-weight: 500;
+}
+
+.readOnlyBadge svg {
+    color: #9ca3af;
+    width: 12px;
+    height: 12px;
 }
 
 .input {
@@ -372,6 +393,14 @@
     min-height: 3rem;
     display: flex;
     align-items: center;
+}
+
+.readOnlyField {
+    background: rgba(107, 114, 128, 0.1);
+    border: 1px solid rgba(107, 114, 128, 0.3);
+    color: #9ca3af;
+    cursor: not-allowed;
+    opacity: 0.8;
 }
 
 /* Class Types */
@@ -468,6 +497,101 @@
     cursor: pointer;
     transition: all 0.3s ease;
     flex: 1;
+}
+
+/* Change Password Section */
+.changePasswordToggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #f97316;
+    color: white;
+    border: none;
+    padding: 0.625rem 1.25rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.changePasswordToggle:hover {
+    background: #ea580c;
+    transform: translateY(-2px);
+}
+
+.changePasswordForm {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #374151;
+}
+
+.passwordInputWrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.passwordInputWrapper input {
+    padding-right: 2.5rem;
+}
+
+.passwordToggle {
+    position: absolute;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    color: #9ca3af;
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+
+.passwordToggle:hover {
+    color: #f97316;
+}
+
+.passwordHint {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    line-height: 1.4;
+    padding: 0.5rem;
+    background: rgba(249, 115, 22, 0.1);
+    border-left: 3px solid #f97316;
+    border-radius: 0.25rem;
+}
+
+.changePasswordButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: linear-gradient(135deg, #f97316, #dc2626);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 100%;
+    margin-top: 1rem;
+}
+
+.changePasswordButton:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ea580c, #b91c1c);
+    transform: translateY(-2px);
+}
+
+.changePasswordButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .cancelButton:hover {

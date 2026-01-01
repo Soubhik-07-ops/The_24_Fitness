@@ -7,9 +7,10 @@ import styles from './ChatWindow.module.css';
 interface ChatMessage {
     id: string;
     request_id: string;
-    sender_id: string;
+    sender_id: string | null;
     content: string;
     created_at: string;
+    is_admin?: boolean;
 }
 
 export default function ChatWindow({ requestId }: { requestId: string }) {
@@ -23,22 +24,76 @@ export default function ChatWindow({ requestId }: { requestId: string }) {
     useEffect(() => {
         const load = async () => {
             const { data: userData } = await supabase.auth.getUser();
-            setUserId(userData.user?.id || null);
+            const currentUserId = userData.user?.id || null;
+            setUserId(currentUserId);
 
-            const { data } = await supabase
-                .from('contact_messages')
-                .select('*')
-                .eq('request_id', requestId)
-                .order('created_at', { ascending: true });
-            setMessages((data as any) || []);
+            if (!currentUserId) return;
+
+            // Get session token for API call
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+
+            // Fetch messages via API (which also deletes notifications)
+            try {
+                const response = await fetch(`/api/contact/messages/${requestId}`, {
+                    headers: token ? {
+                        'Authorization': `Bearer ${token}`
+                    } : {},
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    setMessages(data.messages || []);
+                } else {
+                    console.error('Error fetching messages:', data.error);
+                    // Fallback to direct query if API fails
+                    const { data: fallbackData } = await supabase
+                        .from('contact_messages')
+                        .select('*')
+                        .eq('request_id', requestId)
+                        .order('created_at', { ascending: true });
+                    setMessages((fallbackData as any) || []);
+                }
+            } catch (error) {
+                console.error('Error fetching messages:', error);
+                // Fallback to direct query
+                const { data } = await supabase
+                    .from('contact_messages')
+                    .select('*')
+                    .eq('request_id', requestId)
+                    .order('created_at', { ascending: true });
+                setMessages((data as any) || []);
+            }
         };
         load();
 
         const channel = supabase
             .channel(`contact_messages_${requestId}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contact_messages', filter: `request_id=eq.${requestId}` }, (payload) => {
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contact_messages', filter: `request_id=eq.${requestId}` }, async (payload) => {
                 const newMsg = payload.new as ChatMessage;
                 setMessages((prev) => [...prev, newMsg]);
+
+                // If new message is from admin, delete the notification
+                if ((newMsg.is_admin || !newMsg.sender_id) && userId) {
+                    // Admin messages have is_admin=true or sender_id as null
+                    try {
+                        const { data: { session } } = await supabase.auth.getSession();
+                        const token = session?.access_token;
+
+                        // Call API to delete notification
+                        await fetch(`/api/contact/notifications/${requestId}`, {
+                            method: 'DELETE',
+                            headers: token ? {
+                                'Authorization': `Bearer ${token}`
+                            } : {},
+                            credentials: 'include'
+                        });
+                    } catch (err) {
+                        console.error('Error deleting notification for new message:', err);
+                    }
+                }
             })
             .subscribe();
 
@@ -100,7 +155,7 @@ export default function ChatWindow({ requestId }: { requestId: string }) {
             <div className={styles.header}>Chat with Admin</div>
             <div className={styles.list} ref={listRef}>
                 {messages.map((m) => {
-                    const mine = m.sender_id === userId;
+                    const mine = m.sender_id === userId && !m.is_admin;
                     return (
                         <div key={m.id} className={mine ? styles.bubbleMine : styles.bubbleOther}>
                             <div className={styles.content}>{m.content}</div>

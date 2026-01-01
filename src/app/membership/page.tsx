@@ -13,8 +13,7 @@ export default function MembershipPage() {
     return (
         <>
             <Navbar />
-            <br />
-            <main>
+            <main style={{ paddingTop: '4.5rem' }}>
                 <MembershipPlans />
                 <CTASection />
             </main>

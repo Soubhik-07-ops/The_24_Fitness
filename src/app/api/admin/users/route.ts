@@ -21,13 +21,52 @@ export async function DELETE(request: NextRequest) {
         const { id } = body;
         if (!id) return NextResponse.json({ success: false, error: 'Missing id for delete' }, { status: 400 });
 
-        // Delete related bookings
-        const { error: bookingsError } = await supabaseAdmin.from('bookings').delete().eq('user_id', id);
-        if (bookingsError) console.error('Error deleting bookings for user:', bookingsError);
+        // Get user profile before deleting
+        const { data: profile, error: profileError } = await supabaseAdmin
+            .from('profiles')
+            .select('full_name')
+            .eq('id', id)
+            .single();
+
+        const userName = profile?.full_name || 'User';
+
+        // Booking system removed - no bookings to delete
+
+        // Notify user before deleting (if they're still logged in)
+        try {
+            await supabaseAdmin.from('notifications').insert({
+                recipient_id: id,
+                actor_role: 'admin',
+                type: 'account_deleted',
+                content: 'Your account has been deleted by the admin.'
+            });
+
+            const userChannel = supabaseAdmin.channel(`notifications_user_${id}`);
+            await userChannel.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await userChannel.send({
+                type: 'broadcast',
+                event: 'new_message',
+                payload: {
+                    by: 'admin',
+                    notificationType: 'account_deleted',
+                    content: 'Your account has been deleted by the admin.'
+                }
+            });
+            await userChannel.unsubscribe();
+        } catch (userNotifErr) {
+            console.error('Error notifying user:', userNotifErr);
+        }
+
+        // Booking system removed - no booking notifications needed
 
         // Delete related reviews
         const { error: reviewsError } = await supabaseAdmin.from('reviews').delete().eq('user_id', id);
         if (reviewsError) console.error('Error deleting reviews for user:', reviewsError);
+
+        // Delete trainer messages (messages between user and trainers)
+        const { error: messagesError } = await supabaseAdmin.from('trainer_messages').delete().eq('user_id', id);
+        if (messagesError) console.error('Error deleting trainer messages for user:', messagesError);
 
         // Delete profile
         const { error } = await supabaseAdmin.from('profiles').delete().eq('id', id);

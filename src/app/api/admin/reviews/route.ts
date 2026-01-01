@@ -9,6 +9,48 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
     auth: { autoRefreshToken: false, persistSession: false }
 });
 
+export async function PUT(request: NextRequest) {
+    try {
+        const token = request.cookies.get('admin_token')?.value;
+        if (!token) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+        const admin = await validateAdminSession(token);
+        if (!admin) return NextResponse.json({ success: false, error: 'Invalid or expired admin session' }, { status: 401 });
+
+        const body = await request.json();
+        const { id, is_approved } = body;
+        if (!id || typeof is_approved !== 'boolean') {
+            return NextResponse.json({ success: false, error: 'Missing id or is_approved' }, { status: 400 });
+        }
+
+        const { error } = await supabaseAdmin
+            .from('reviews')
+            .update({ is_approved, updated_at: new Date().toISOString() })
+            .eq('id', id);
+
+        if (error) {
+            return NextResponse.json({ success: false, error: error.message || error }, { status: 500 });
+        }
+
+        try {
+            await supabaseAdmin.from('admin_audit').insert([{
+                admin_id: admin.id,
+                action: is_approved ? 'approve' : 'reject',
+                table_name: 'reviews',
+                record_id: id,
+                payload: null,
+                created_at: new Date().toISOString()
+            }]);
+        } catch (auditErr) {
+            // Audit log failure is non-critical
+        }
+
+        return NextResponse.json({ success: true }, { status: 200 });
+    } catch (err: any) {
+        return NextResponse.json({ success: false, error: err.message || String(err) }, { status: 500 });
+    }
+}
+
 export async function DELETE(request: NextRequest) {
     try {
         const token = request.cookies.get('admin_token')?.value;
@@ -23,19 +65,17 @@ export async function DELETE(request: NextRequest) {
 
         const { error } = await supabaseAdmin.from('reviews').delete().eq('id', id);
         if (error) {
-            console.error('Admin reviews DELETE error:', error);
             return NextResponse.json({ success: false, error: error.message || error }, { status: 500 });
         }
 
         try {
             await supabaseAdmin.from('admin_audit').insert([{ admin_id: admin.id, action: 'delete', table_name: 'reviews', record_id: id, payload: null, created_at: new Date().toISOString() }]);
         } catch (auditErr) {
-            console.warn('Failed to write audit log (reviews):', auditErr);
+            // Audit log failure is non-critical
         }
 
         return NextResponse.json({ success: true }, { status: 200 });
     } catch (err: any) {
-        console.error('Admin reviews DELETE exception:', err);
         return NextResponse.json({ success: false, error: err.message || String(err) }, { status: 500 });
     }
 }

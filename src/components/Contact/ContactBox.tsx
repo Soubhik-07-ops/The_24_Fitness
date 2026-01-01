@@ -112,7 +112,7 @@ export default function ContactBox({ isAuthed }: { isAuthed: boolean }) {
     return (
         <section className={styles.container}>
             <div className={styles.card}>
-                <h2 className={styles.title}>Contact The 24 Fitness</h2>
+                <h2 className={styles.title}>Contact The 24 Fitness Gym</h2>
                 <p className={styles.subtitle}>Have questions? Send us a message.</p>
 
                 {!isAuthed && (

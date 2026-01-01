@@ -3,12 +3,14 @@
 import { motion } from 'framer-motion'
 import { useInView } from 'framer-motion'
 import { useRef } from 'react'
-import { ArrowRight, Calendar, Phone, MapPin, Clock } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowRight, Sparkles, Calendar, Phone, MapPin, Clock } from 'lucide-react'
 import styles from './CTASection.module.css'
 
 export default function CTASection() {
     const ref = useRef(null)
     const isInView = useInView(ref, { once: true, margin: '-100px' })
+    const router = useRouter()
 
     const features = [
         {
@@ -79,13 +81,20 @@ export default function CTASection() {
                         animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
                         transition={{ duration: 0.8, delay: 0.6 }}
                     >
-                        <a href="#membership" className={styles.primaryButton}>
-                            Start Free Trial
+                        <button
+                            className={styles.primaryButton}
+                            onClick={() => router.push('/membership')}
+                        >
+                            Join Now
                             <ArrowRight size={20} />
-                        </a>
-                        <a href="#contact" className={styles.secondaryButton}>
-                            Book a Tour
-                        </a>
+                        </button>
+                        <button
+                            className={styles.secondaryButton}
+                            onClick={() => router.push('/features')}
+                        >
+                            <Sparkles size={20} />
+                            Explore Features
+                        </button>
                     </motion.div>
 
                     <motion.div

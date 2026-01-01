@@ -6,19 +6,33 @@ import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { UserProfile, ProfileFormData } from '@/types/profile';
 import styles from './Profile.module.css';
-import { User, Phone, Calendar, Target, Heart, UserCheck, Save, Edit, Camera, Loader2, Trash2 } from 'lucide-react';
+import { User, Phone, Calendar, Target, Heart, UserCheck, Save, Edit, Camera, Loader2, Trash2, Mail, Lock, Key, Eye, EyeOff } from 'lucide-react';
+import { validatePassword, getPasswordRequirements } from '@/lib/passwordValidation';
+import Toast from '@/components/Toast/Toast';
+import { useToast } from '@/hooks/useToast';
 
 export default function Profile() {
     const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [userEmail, setUserEmail] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [editing, setEditing] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [deletingAvatar, setDeletingAvatar] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [passwordError, setPasswordError] = useState<string | null>(null);
     const [imageError, setImageError] = useState(false);
     const [avatarKey, setAvatarKey] = useState(0);
+    const [showChangePassword, setShowChangePassword] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
+    const [changingPassword, setChangingPassword] = useState(false);
+    const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const router = useRouter();
+    const { toast, toastType, showToast, hideToast } = useToast();
 
     const [formData, setFormData] = useState<ProfileFormData>({
         full_name: '',
@@ -63,6 +77,8 @@ export default function Profile() {
                 return;
             }
 
+            // Get user email
+            setUserEmail(session.user.email || null);
             fetchProfile(session.user.id);
         };
 
@@ -113,11 +129,14 @@ export default function Profile() {
                 return;
             }
 
+            // Don't update phone number - it's read-only
+            const { phone: _, ...formDataWithoutPhone } = formData;
+
             const { error } = await supabase
                 .from('profiles')
                 .upsert({
                     id: session.user.id,
-                    ...formData,
+                    ...formDataWithoutPhone,
                     updated_at: new Date().toISOString()
                 });
 
@@ -125,7 +144,7 @@ export default function Profile() {
 
             await fetchProfile(session.user.id);
             setEditing(false);
-            alert('Profile updated successfully! 🎉');
+            showToast('Profile updated successfully! 🎉', 'success');
 
         } catch (error: any) {
             console.error('Error saving profile:', error);
@@ -141,12 +160,12 @@ export default function Profile() {
             if (!file) return;
 
             if (file.size > 400 * 1024) {
-                alert('File size too large. Please choose an image under 400KB.');
+                showToast('File size too large. Please choose an image under 400KB.', 'error');
                 return;
             }
 
             if (!file.type.startsWith('image/')) {
-                alert('Please upload an image file (JPEG, PNG, WebP).');
+                showToast('Please upload an image file (JPEG, PNG, WebP).', 'error');
                 return;
             }
 
@@ -188,11 +207,11 @@ export default function Profile() {
 
             setAvatarKey(prev => prev + 1);
             await fetchProfile(session.user.id);
-            alert('Profile picture updated successfully! 🎉');
+            showToast('Profile picture updated successfully! 🎉', 'success');
 
         } catch (error: any) {
             console.error('Error uploading avatar:', error);
-            alert('Failed to upload profile picture: ' + error.message);
+            showToast('Failed to upload profile picture: ' + error.message, 'error');
         } finally {
             setUploading(false);
             if (event.target) {
@@ -223,7 +242,7 @@ export default function Profile() {
 
     const handleDeleteAvatar = async () => {
         if (!profile?.avatar_url) {
-            alert('No profile picture to delete.');
+            showToast('No profile picture to delete.', 'warning');
             return;
         }
 
@@ -254,11 +273,11 @@ export default function Profile() {
 
             setAvatarKey(prev => prev + 1);
             await fetchProfile(session.user.id);
-            alert('Profile picture removed successfully!');
+            showToast('Profile picture removed successfully!', 'success');
 
         } catch (error: any) {
             console.error('Error deleting avatar:', error);
-            alert('Failed to remove profile picture: ' + error.message);
+            showToast('Failed to remove profile picture: ' + error.message, 'error');
         } finally {
             setDeletingAvatar(false);
         }
@@ -279,6 +298,77 @@ export default function Profile() {
 
     const handleImageLoad = () => {
         setImageError(false);
+    };
+
+    const handleChangePassword = async () => {
+        setChangingPassword(true);
+        setPasswordError(null);
+
+        // Validations
+        if (!currentPassword || !newPassword || !confirmNewPassword) {
+            setPasswordError('All password fields are required');
+            setChangingPassword(false);
+            return;
+        }
+
+        if (newPassword !== confirmNewPassword) {
+            setPasswordError('New passwords do not match');
+            setChangingPassword(false);
+            return;
+        }
+
+        // Validate password requirements
+        const passwordValidation = validatePassword(newPassword);
+        if (!passwordValidation.isValid) {
+            setPasswordError(passwordValidation.error || 'Invalid password');
+            setChangingPassword(false);
+            return;
+        }
+
+        if (currentPassword === newPassword) {
+            setPasswordError('New password must be different from current password');
+            setChangingPassword(false);
+            return;
+        }
+
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.user) {
+                router.push('/signup');
+                return;
+            }
+
+            // Verify current password by attempting to re-authenticate
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: session.user.email!,
+                password: currentPassword
+            });
+
+            if (signInError) {
+                setPasswordError('Current password is incorrect');
+                setChangingPassword(false);
+                return;
+            }
+
+            // Update password
+            const { error: updateError } = await supabase.auth.updateUser({
+                password: newPassword
+            });
+
+            if (updateError) throw updateError;
+
+            showToast('Password changed successfully! 🎉', 'success');
+            setShowChangePassword(false);
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmNewPassword('');
+            setPasswordError(null);
+        } catch (error: any) {
+            console.error('Error changing password:', error);
+            setPasswordError('Failed to change password: ' + error.message);
+        } finally {
+            setChangingPassword(false);
+        }
     };
 
     if (loading) {
@@ -421,22 +511,30 @@ export default function Profile() {
 
                         <div className={styles.formGroup}>
                             <label className={styles.label}>
+                                <Mail size={16} />
+                                Email Address
+                                <span className={styles.readOnlyBadge}>
+                                    <Lock size={12} />
+                                    Cannot be changed
+                                </span>
+                            </label>
+                            <div className={`${styles.displayValue} ${styles.readOnlyField}`}>
+                                {userEmail || 'Not available'}
+                            </div>
+                        </div>
+
+                        <div className={styles.formGroup}>
+                            <label className={styles.label}>
                                 <Phone size={16} />
                                 Phone Number
+                                <span className={styles.readOnlyBadge}>
+                                    <Lock size={12} />
+                                    Cannot be changed
+                                </span>
                             </label>
-                            {editing ? (
-                                <input
-                                    type="tel"
-                                    value={formData.phone}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                                    className={styles.input}
-                                    placeholder="Enter your phone number"
-                                />
-                            ) : (
-                                <div className={styles.displayValue}>
+                            <div className={`${styles.displayValue} ${styles.readOnlyField}`}>
                                     {profile?.phone || 'Not set'}
                                 </div>
-                            )}
                         </div>
 
                         <div className={styles.formGroup}>
@@ -599,8 +697,132 @@ export default function Profile() {
                             </button>
                         </div>
                     )}
+
+                    {/* Change Password Section */}
+                    <div className={styles.sectionHeader} style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid #374151' }}>
+                        <h2>Change Password</h2>
+                        <button
+                            onClick={() => {
+                                setShowChangePassword(!showChangePassword);
+                                if (showChangePassword) {
+                                    setCurrentPassword('');
+                                    setNewPassword('');
+                                    setConfirmNewPassword('');
+                                    setPasswordError(null);
+                                }
+                            }}
+                            className={styles.changePasswordToggle}
+                        >
+                            {showChangePassword ? 'Cancel' : 'Change Password'}
+                        </button>
+                    </div>
+
+                    {showChangePassword && (
+                        <div className={styles.changePasswordForm}>
+                            <div className={styles.formGrid}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.label}>
+                                        <Key size={16} />
+                                        Current Password
+                                    </label>
+                                    <div className={styles.passwordInputWrapper}>
+                                        <input
+                                            type={showCurrentPassword ? 'text' : 'password'}
+                                            value={currentPassword}
+                                            onChange={(e) => setCurrentPassword(e.target.value)}
+                                            className={styles.input}
+                                            placeholder="Enter current password"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                            className={styles.passwordToggle}
+                                        >
+                                            {showCurrentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className={styles.formGroup}>
+                                    <label className={styles.label}>
+                                        <Key size={16} />
+                                        New Password
+                                    </label>
+                                    <div className={styles.passwordInputWrapper}>
+                                        <input
+                                            type={showNewPassword ? 'text' : 'password'}
+                                            value={newPassword}
+                                            onChange={(e) => setNewPassword(e.target.value)}
+                                            className={styles.input}
+                                            placeholder="Enter new password"
+                                            minLength={8}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowNewPassword(!showNewPassword)}
+                                            className={styles.passwordToggle}
+                                        >
+                                            {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                        </button>
+                                    </div>
+                                    <p className={styles.passwordHint}>
+                                        Password must contain: 8+ characters, uppercase, lowercase, number, and special character (!@#$%&*)
+                                    </p>
+                                </div>
+
+                                <div className={styles.formGroup}>
+                                    <label className={styles.label}>
+                                        <Key size={16} />
+                                        Confirm New Password
+                                    </label>
+                                    <div className={styles.passwordInputWrapper}>
+                                        <input
+                                            type={showConfirmPassword ? 'text' : 'password'}
+                                            value={confirmNewPassword}
+                                            onChange={(e) => setConfirmNewPassword(e.target.value)}
+                                            className={styles.input}
+                                            placeholder="Confirm new password"
+                                            minLength={8}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                            className={styles.passwordToggle}
+                                        >
+                                            {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {passwordError && (
+                                <div className={styles.errorBanner}>
+                                    {passwordError}
+                                </div>
+                            )}
+
+                            <button
+                                onClick={handleChangePassword}
+                                disabled={changingPassword || !currentPassword || !newPassword || !confirmNewPassword}
+                                className={styles.changePasswordButton}
+                            >
+                                {changingPassword ? (
+                                    <>
+                                        <Loader2 className={styles.spinner} size={16} />
+                                        Changing Password...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Key size={16} />
+                                        Change Password
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
+            <Toast message={toast} type={toastType} onClose={hideToast} />
         </div>
     );
 }

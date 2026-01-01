@@ -35,7 +35,7 @@ export default function AdminLogin() {
         <div className={styles.loginContainer}>
             <div className={styles.loginCard}>
                 <div className={styles.loginHeader}>
-                    <h1 className={styles.logo}>THE24FITNESS ADMIN</h1>
+                    <h1 className={styles.logo}>THE 24 FITNESS GYM ADMIN</h1>
                     <p className={styles.subtitle}>Admin Panel Access</p>
                 </div>
 

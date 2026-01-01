@@ -63,7 +63,6 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (error || !admin) {
-            console.error('Admin fetch error:', error);
             return NextResponse.json(
                 { error: 'Invalid credentials' },
                 { status: 401 }

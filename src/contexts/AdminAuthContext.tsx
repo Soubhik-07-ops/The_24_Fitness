@@ -27,13 +27,25 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
 
     useEffect(() => {
-        checkSession();
+        // Only check session if we're on admin pages
+        if (pathname?.startsWith('/admin')) {
+            checkSession();
+        } else {
+            // Not on admin pages, just set loading to false
+            setLoading(false);
+        }
     }, [pathname]);
 
     const checkSession = async () => {
         try {
             // Don't check session on login page
             if (pathname === '/admin/login') {
+                setLoading(false);
+                return;
+            }
+
+            // Only validate if on admin pages
+            if (!pathname?.startsWith('/admin')) {
                 setLoading(false);
                 return;
             }

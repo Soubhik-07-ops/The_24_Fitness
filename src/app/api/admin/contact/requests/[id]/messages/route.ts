@@ -63,12 +63,31 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
             }
         } catch {}
 
-        // Notify user
+        // Notify user via broadcast
         try {
-            const realtime = supabaseAdmin.channel(`notify_user_${reqRow?.user_id || 'unknown'}`);
-            await realtime.send({ type: 'broadcast', event: 'new_message', payload: { requestId } });
-            await realtime.unsubscribe();
+            const userChannel = supabaseAdmin.channel(`notifications_user_${reqRow?.user_id || 'unknown'}`);
+            await userChannel.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await userChannel.send({ 
+                type: 'broadcast', 
+                event: 'new_message', 
+                payload: { 
+                    requestId,
+                    by: 'admin'
+                } 
+            });
+            await userChannel.unsubscribe();
         } catch {}
+
+        // Also broadcast to admin message channel for real-time update in admin panel
+        try {
+            const adminChannel = supabaseAdmin.channel(`contact_messages_${requestId}`);
+            await adminChannel.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await adminChannel.send({ type: 'broadcast', event: 'new_message', payload: { by: 'admin' } });
+            await adminChannel.unsubscribe();
+        } catch {}
+
         return NextResponse.json({ ok: true });
     } catch (err: any) {
         console.error('Admin send message error:', err);

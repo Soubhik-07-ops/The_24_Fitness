@@ -298,3 +298,44 @@
 .legalLink:hover::after {
     width: 100%;
 }
+
+/* Developer Credit */
+.developerCredit {
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 1px solid rgba(255, 91, 55, 0.1);
+    text-align: center;
+}
+
+.creditText {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+.developerLink {
+    color: #ff9a3c;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.developerLink:hover {
+    color: #ff5b37;
+}
+
+.developerLink::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 1px;
+    background: linear-gradient(90deg, #ff5b37 0%, #ff9a3c 100%);
+    transition: width 0.3s ease;
+}
+
+.developerLink:hover::after {
+    width: 100%;
+}

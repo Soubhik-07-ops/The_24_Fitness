@@ -1,10 +1,43 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Dumbbell, MapPin, Phone, Mail, Facebook, Twitter, Instagram, Youtube } from 'lucide-react'
 import styles from './Footer.module.css'
 
+interface GeneralSettings {
+    gymName: string;
+    contactEmail: string;
+    contactPhone: string;
+    gymAddress: string;
+    businessHours: string;
+}
+
 export default function Footer() {
+    const [settings, setSettings] = useState<GeneralSettings>({
+        gymName: 'THE 24 FITNESS GYM',
+        contactEmail: 'The24fitness8055@gmail.com',
+        contactPhone: '8084548055',
+        gymAddress: 'Digwadih No. 10, near Gobinda sweets, Old SBI Building',
+        businessHours: 'Open 24/6 • 313 Days'
+    });
+
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const response = await fetch('/api/settings/general');
+                const data = await response.json();
+                if (data.success && data.settings) {
+                    setSettings(data.settings);
+                }
+            } catch (error) {
+                console.error('Failed to fetch settings:', error);
+                // Keep default values on error
+            }
+        };
+        fetchSettings();
+    }, []);
+
     return (
         <footer className={styles.footer}>
             <div className={styles.container}>
@@ -13,7 +46,7 @@ export default function Footer() {
                     <div className={styles.brand}>
                         <div className={styles.logo}>
                             <Dumbbell size={32} color="#f97316" />
-                            <span className={styles.logoText}>THE 24 FITNESS</span>
+                            <span className={styles.logoText}>{settings.gymName}</span>
                         </div>
                         <p className={styles.description}>
                             Your premier the 24/7 fitness destination. Transform your body,
@@ -66,20 +99,20 @@ export default function Footer() {
                             <div className={styles.contactItem}>
                                 <MapPin size={18} />
                                 <a href="https://maps.app.goo.gl/uoNrsabeKA6xAAMp6" target="_blank" rel="noopener noreferrer" className={styles.contactLink}>
-                                    Digwadih No. 10, near Gobinda sweets, Old SBI Building
+                                    {settings.gymAddress}
                                 </a>
                             </div>
                             <div className={styles.contactItem}>
                                 <Phone size={18} />
-                                <a href="tel:8084548055" className={styles.contactLink}>8084548055</a>
+                                <a href={`tel:${settings.contactPhone}`} className={styles.contactLink}>{settings.contactPhone}</a>
                             </div>
                             <div className={styles.contactItem}>
                                 <Mail size={18} />
-                                <a href="mailto:The24ditness8055@gmail.com" className={styles.contactLink}>The24ditness8055@gmail.com</a>
+                                <a href={`mailto:${settings.contactEmail}`} className={styles.contactLink}>{settings.contactEmail}</a>
                             </div>
                             <div className={styles.contactItem}>
                                 <Dumbbell size={18} />
-                                <span>Open 24/6 • 313 Days</span>
+                                <span>{settings.businessHours}</span>
                             </div>
                         </div>
                     </div>
@@ -88,13 +121,23 @@ export default function Footer() {
                 {/* Bottom Footer */}
                 <div className={styles.bottomFooter}>
                     <div className={styles.copyright}>
-                        © 2024 The 24 Fitness Gym. All rights reserved.
+                        2025 The 24 Fitness Gym. All rights reserved.
                     </div>
                     <div className={styles.legalLinks}>
                         <a href="#" className={styles.legalLink}>Privacy Policy</a>
                         <a href="#" className={styles.legalLink}>Terms of Service</a>
                         <a href="#" className={styles.legalLink}>Cookie Policy</a>
                     </div>
+                </div>
+
+                {/* Developer Credit */}
+                <div className={styles.developerCredit}>
+                    <p className={styles.creditText}>
+                        Website developed by{' '}
+                        <a href="https://www.linkedin.com/in/soubhik-roy07/" target="_blank" rel="noopener noreferrer" className={styles.developerLink}>
+                            Soubhik Roy
+                        </a>
+                    </p>
                 </div>
             </div>
         </footer>

@@ -15,12 +15,23 @@ interface ChatMessage {
     created_at: string;
 }
 
+interface Membership {
+    id: number;
+    user_id: string;
+    status: string;
+    trainer_assigned: boolean;
+    membership_end_date: string | null;
+    trainer_period_end: string | null;
+}
+
 export default function AdminChatThreadPage() {
     const params = useParams();
     const requestId = params?.id as string;
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [typingUser, setTypingUser] = useState<string | null>(null);
+    const [membership, setMembership] = useState<Membership | null>(null);
+    const [renewing, setRenewing] = useState<string | null>(null);
     const listRef = useRef<HTMLDivElement | null>(null);
     const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
     const messageChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -31,32 +42,71 @@ export default function AdminChatThreadPage() {
         if (res.ok) setMessages(data.messages || []);
     };
 
-    useEffect(() => { load(); }, [requestId]);
+    const loadUserMembership = async () => {
+        try {
+            // Get user_id from contact request
+            const reqRes = await fetch(`/api/admin/contact/requests/${requestId}`, { cache: 'no-store', credentials: 'include' });
+            if (reqRes.ok) {
+                const reqData = await reqRes.json();
+                const userId = reqData.request?.user_id;
+                if (userId) {
+                    // Fetch user's active membership
+                    const memRes = await fetch(`/api/admin/memberships?userId=${userId}`, { cache: 'no-store', credentials: 'include' });
+                    if (memRes.ok) {
+                        const memData = await memRes.json();
+                        const activeMembership = memData.memberships?.find((m: Membership) => m.status === 'active');
+                        setMembership(activeMembership || null);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error loading user membership:', error);
+        }
+    };
+
     useEffect(() => {
-        // Fallback polling every 3s in case realtime is unavailable
-        const interval = setInterval(() => { load(); }, 3000);
-        return () => clearInterval(interval);
+        load();
+        loadUserMembership();
     }, [requestId]);
 
     useEffect(() => {
+        if (!requestId) return;
+
         const typingChannel = supabase
             .channel(`typing_request_${requestId}`)
             .on('broadcast', { event: 'typing' }, (payload: any) => {
                 const { by, isTyping } = payload.payload || {};
                 if (by === 'user') setTypingUser(isTyping ? 'User is typing…' : null);
             })
-            .on('broadcast', { event: 'new_message' }, () => {
-                // fallback when DB changes aren't delivered due to RLS
-                load();
+            .on('broadcast', { event: 'new_message' }, (payload: any) => {
+                // Fallback when DB changes aren't delivered due to RLS
+                // User sends messages via this channel
+                const { by } = payload.payload || {};
+                if (by === 'user') {
+                    load();
+                }
             })
             .subscribe();
         typingChannelRef.current = typingChannel;
 
         const changesChannel = supabase
             .channel(`contact_messages_${requestId}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contact_messages', filter: `request_id=eq.${requestId}` }, (payload) => {
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'contact_messages',
+                filter: `request_id=eq.${requestId}`
+            }, (payload) => {
                 const newMsg = payload.new as ChatMessage;
-                setMessages(prev => [...prev, newMsg]);
+                setMessages(prev => {
+                    // Check if message already exists to prevent duplicates
+                    if (prev.some(m => m.id === newMsg.id)) return prev;
+                    return [...prev, newMsg];
+                });
+            })
+            .on('broadcast', { event: 'new_message' }, () => {
+                // Additional fallback for message updates
+                load();
             })
             .subscribe();
         messageChannelRef.current = changesChannel;
@@ -70,8 +120,10 @@ export default function AdminChatThreadPage() {
     }, [requestId]);
 
     useEffect(() => {
-        if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-    }, [messages]);
+        if (listRef.current) {
+            listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
+    }, [messages, typingUser]);
 
     const typingTimerRef = useRef<any>(null);
     const onInputChange = (v: string) => {
@@ -99,15 +151,91 @@ export default function AdminChatThreadPage() {
         await load();
     };
 
+    const handleRenewal = async (renewalType: 'membership' | 'trainer') => {
+        if (!membership) return;
+
+        setRenewing(renewalType);
+        try {
+            const res = await fetch('/api/admin/memberships/renew', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    membershipId: membership.id,
+                    renewalType
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                alert(`Successfully renewed ${renewalType === 'membership' ? 'membership' : 'trainer access'}!`);
+                await loadUserMembership();
+                // Send confirmation message to user
+                await fetch(`/api/admin/contact/requests/${requestId}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        content: `Your ${renewalType === 'membership' ? 'membership' : 'trainer access'} has been renewed successfully. An invoice has been generated and is available in your dashboard.`
+                    })
+                });
+                await load();
+            } else {
+                alert(data.error || 'Failed to renew');
+            }
+        } catch (error) {
+            console.error('Error renewing:', error);
+            alert('An error occurred while processing renewal');
+        } finally {
+            setRenewing(null);
+        }
+    };
+
     return (
         <div className={adminStyles.content}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h1 className={adminStyles.pageTitle}>Chat</h1>
-                <button className={adminStyles.retryButton} onClick={async () => {
-                    if (!confirm('Delete this chat? This will remove all messages.')) return;
-                    const res = await fetch(`/api/admin/contact/requests/${requestId}`, { method: 'DELETE', credentials: 'include' });
-                    if (res.ok) window.location.href = '/admin/messages';
-                }}>Delete Chat</button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {membership && (
+                        <>
+                            <button
+                                className={adminStyles.retryButton}
+                                onClick={() => handleRenewal('membership')}
+                                disabled={renewing !== null}
+                                style={{
+                                    background: '#3b82f6',
+                                    opacity: renewing === 'membership' ? 0.6 : 1
+                                }}
+                            >
+                                {renewing === 'membership' ? 'Renewing...' : 'Renew Membership'}
+                            </button>
+                            {membership.trainer_assigned && (
+                                <button
+                                    className={adminStyles.retryButton}
+                                    onClick={() => handleRenewal('trainer')}
+                                    disabled={renewing !== null}
+                                    style={{
+                                        background: '#10b981',
+                                        opacity: renewing === 'trainer' ? 0.6 : 1
+                                    }}
+                                >
+                                    {renewing === 'trainer' ? 'Renewing...' : 'Renew Trainer'}
+                                </button>
+                            )}
+                        </>
+                    )}
+                    <button className={adminStyles.retryButton} onClick={async () => {
+                        if (!confirm('Delete this chat? This will remove all messages.')) return;
+                        try {
+                            const res = await fetch(`/api/admin/contact/requests/${requestId}`, { method: 'DELETE', credentials: 'include' });
+                            if (res.ok) {
+                                window.location.href = '/admin/messages';
+                            }
+                        } catch (error) {
+                            // Error handling - could add error state if needed
+                        }
+                    }}>Delete Chat</button>
+                </div>
             </div>
             <div className={styles.wrapper}>
                 <div className={styles.list} ref={listRef}>

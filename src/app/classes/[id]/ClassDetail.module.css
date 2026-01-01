@@ -72,6 +72,38 @@
     flex: 1;
 }
 
+.classImageContainer {
+    flex-shrink: 0;
+    width: 400px;
+    height: 300px;
+    border-radius: 1rem;
+    overflow: hidden;
+    border: 1px solid #374151;
+    background: linear-gradient(135deg, #1f2937, #111827);
+}
+
+.classImage {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.classImagePlaceholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    color: #6b7280;
+}
+
+.classImagePlaceholder span {
+    font-size: 0.875rem;
+    color: #9ca3af;
+}
+
 .classTitleSection {
     margin-bottom: 1.5rem;
 }
@@ -229,6 +261,12 @@
     .classHeader {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .classImageContainer {
+        width: 100%;
+        height: 250px;
+        order: -1;
     }
 
     .classTitle {

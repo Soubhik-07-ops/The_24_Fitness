@@ -171,7 +171,7 @@
     cursor: pointer;
     transition: all 0.3s ease;
     text-decoration: none;
-    color: inherit;
+    color: #374151;
     font-size: 0.875rem;
     font-weight: 500;
 }
@@ -180,6 +180,15 @@
     border-color: #f97316;
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    color: #f97316;
+}
+
+.actionButton svg {
+    color: #374151;
+    transition: color 0.3s ease;
+}
+
+.actionButton:hover svg {
     color: #f97316;
 }
 
@@ -550,11 +559,13 @@
 @media (min-width: 1024px) {
     .sidebar {
         transform: translateX(0);
-        position: static;
+        position: fixed;
+        left: 0;
+        top: 0;
     }
 
     .mainContent {
-        margin-left: 0;
+        margin-left: 280px;
     }
 
     .menuButton {
@@ -566,6 +577,39 @@
     }
 }
 
+/* Tablet Styles */
+@media (min-width: 769px) and (max-width: 1023px) {
+    .sidebar {
+        width: 100%;
+        max-width: 320px;
+    }
+
+    .statsGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .actionGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .summaryGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .welcomeTitle {
+        font-size: 1.75rem;
+    }
+
+    .headerContent {
+        flex-wrap: wrap;
+    }
+
+    .welcomeText {
+        display: none;
+    }
+}
+
+/* Mobile and Small Tablet */
 @media (max-width: 1023px) {
     .sidebar {
         width: 100%;
@@ -590,8 +634,17 @@
         width: 100%;
         justify-content: flex-start;
     }
+
+    .header {
+        padding: 0.75rem 1rem;
+    }
+
+    .pageTitle {
+        font-size: 1.25rem;
+    }
 }
 
+/* Mobile Styles */
 @media (max-width: 768px) {
     .content {
         padding: 1rem;
@@ -599,9 +652,97 @@
 
     .statCard {
         padding: 1rem;
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .statIcon {
+        width: 2.5rem;
+        height: 2.5rem;
     }
 
     .statNumber {
         font-size: 1.5rem;
+    }
+
+    .statLabel {
+        font-size: 0.875rem;
+    }
+
+    .statSubtext {
+        font-size: 0.7rem;
+    }
+
+    .welcomeTitle {
+        font-size: 1.25rem;
+    }
+
+    .welcomeSubtitle {
+        font-size: 0.875rem;
+    }
+
+    .sectionTitle {
+        font-size: 1.25rem;
+    }
+
+    .actionButton {
+        padding: 1rem;
+    }
+
+    .refreshButton {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8125rem;
+    }
+
+    .header {
+        padding: 0.75rem;
+    }
+
+    .pageTitle {
+        font-size: 1.125rem;
+    }
+
+    .welcomeText {
+        display: none;
+    }
+
+    .summaryItem {
+        gap: 0.375rem;
+    }
+
+    .summaryValue {
+        font-size: 0.8125rem;
+    }
+}
+
+/* Small Mobile */
+@media (max-width: 480px) {
+    .content {
+        padding: 0.75rem;
+    }
+
+    .statCard {
+        padding: 0.75rem;
+    }
+
+    .statNumber {
+        font-size: 1.25rem;
+    }
+
+    .welcomeTitle {
+        font-size: 1.125rem;
+    }
+
+    .actionButton {
+        padding: 0.875rem;
+        font-size: 0.8125rem;
+    }
+
+    .header {
+        padding: 0.5rem;
+    }
+
+    .pageTitle {
+        font-size: 1rem;
     }
 }

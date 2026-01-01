@@ -87,4 +87,10 @@
     color: #6b7280;
 }
 
-
+/* Cards Container */
+.cardsContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}

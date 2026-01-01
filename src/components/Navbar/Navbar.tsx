@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, X, Dumbbell } from 'lucide-react'
+import { Menu, X, Dumbbell, Loader2 } from 'lucide-react'
 import styles from './Navbar.module.css'
 import { supabase } from '@/lib/supabaseClient'
 import { type User } from '@supabase/supabase-js'
@@ -14,14 +14,16 @@ export default function Navbar() {
     const [isOpen, setIsOpen] = useState(false)
     const [mounted, setMounted] = useState(false)
     const [user, setUser] = useState<User | null>(null)
+    const [isLoggingOut, setIsLoggingOut] = useState(false)
     const router = useRouter()
 
     const menuItems = [
         { name: 'Home', path: '/' },
-        { name: 'Features', path: '/features' },
-        { name: 'Membership', path: '/membership' },
+        { name: 'Gym Benefits', path: '/features' },
         { name: 'Trainers', path: '/trainers' },
-        { name: 'Contact', path: '/contact' }
+        { name: 'Membership', path: '/membership' },
+        { name: 'Offers', path: '/offers' },
+        { name: 'Contact Us', path: '/contact' }
     ]
 
     // ✅ Handle mount + auth + responsive behavior
@@ -55,9 +57,19 @@ export default function Navbar() {
     }, [router, isOpen])
 
     const handleLogout = async () => {
-        await supabase.auth.signOut()
-        setIsOpen(false)
-        router.push('/')
+        setIsLoggingOut(true)
+        try {
+            await supabase.auth.signOut()
+            setIsOpen(false)
+            // Small delay for smooth UX
+            setTimeout(() => {
+                router.push('/')
+                window.location.href = '/'
+            }, 500)
+        } catch (error) {
+            console.error('Logout error:', error)
+            setIsLoggingOut(false)
+        }
     }
 
     const handleNavClick = (path: string) => {
@@ -68,7 +80,16 @@ export default function Navbar() {
     if (!mounted) return null
 
     return (
-        <nav className={styles.navbar}>
+        <>
+            {isLoggingOut && (
+                <div className={styles.logoutOverlay}>
+                    <div className={styles.logoutLoadingCard}>
+                        <Loader2 className={styles.logoutOverlaySpinner} size={40} />
+                        <p className={styles.logoutLoadingText}>Logging you out...</p>
+                    </div>
+                </div>
+            )}
+            <nav className={styles.navbar}>
             <div className={styles.container}>
                 {/* Logo */}
                 <div className={styles.logo} onClick={() => router.push('/')}>
@@ -97,8 +118,19 @@ export default function Navbar() {
                     )}
                     {user && <NotificationBell mode="user" />}
                     {user ? (
-                        <button onClick={handleLogout} className={styles.joinButton}>
-                            Log Out
+                        <button 
+                            onClick={handleLogout} 
+                            className={styles.joinButton}
+                            disabled={isLoggingOut}
+                        >
+                            {isLoggingOut ? (
+                                <span className={styles.logoutLoading}>
+                                    <Loader2 className={styles.logoutSpinner} size={16} />
+                                    Logging Out...
+                                </span>
+                            ) : (
+                                'Log Out'
+                            )}
                         </button>
                     ) : (
                         <button
@@ -155,8 +187,19 @@ export default function Navbar() {
                             )}
                             <div className={styles.mobileButtonContainer}>
                                 {user ? (
-                                    <button onClick={handleLogout} className={styles.mobileJoinButton}>
-                                        Log Out
+                                    <button 
+                                        onClick={handleLogout} 
+                                        className={styles.mobileJoinButton}
+                                        disabled={isLoggingOut}
+                                    >
+                                        {isLoggingOut ? (
+                                            <span className={styles.logoutLoading}>
+                                                <Loader2 className={styles.logoutSpinner} size={16} />
+                                                Logging Out...
+                                            </span>
+                                        ) : (
+                                            'Log Out'
+                                        )}
                                     </button>
                                 ) : (
                                     <button
@@ -172,5 +215,6 @@ export default function Navbar() {
                 )}
             </AnimatePresence>
         </nav>
+        </>
     )
 }

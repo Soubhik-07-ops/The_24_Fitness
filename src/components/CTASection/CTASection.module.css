@@ -100,6 +100,7 @@
     transition: all 0.3s ease;
     transform: scale(1);
     text-decoration: none;
+    font-family: inherit;
 }
 
 .primaryButton:hover {
@@ -122,6 +123,7 @@
     cursor: pointer;
     transition: all 0.3s ease;
     text-decoration: none;
+    font-family: inherit;
 }
 
 .secondaryButton:hover {

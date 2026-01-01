@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ admin });
     } catch (error) {
-        console.error('Admin validation error:', error);
         return NextResponse.json(
             { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
             { status: 500 }

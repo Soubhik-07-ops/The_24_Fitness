@@ -6,9 +6,9 @@ import { useRef } from 'react'
 import styles from './Stats.module.css'
 
 const stats = [
-    { number: 5000, suffix: '+', label: 'Active Members' },
+    { number: 1924, suffix: '+', label: 'Active Members' },
     { number: 24, suffix: '/6', label: 'Open Hours' },
-    { number: 15, suffix: '+', label: 'Expert Trainers' },
+    { number: 4, suffix: '+', label: 'Expert Trainers' },
     { number: 100, suffix: '%', label: 'Satisfaction Rate' }
 ]
 

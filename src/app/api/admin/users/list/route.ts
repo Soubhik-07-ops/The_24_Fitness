@@ -44,7 +44,6 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ users: mergedUsers });
     } catch (err: any) {
-        console.error('Admin users list error:', err);
         return NextResponse.json(
             { error: err.message || 'Failed to fetch users' },
             { status: 500 }

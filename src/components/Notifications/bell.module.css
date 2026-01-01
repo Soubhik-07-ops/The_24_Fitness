@@ -109,6 +109,12 @@
     background: rgba(255, 255, 255, 0.02);
 }
 
+.headerButtons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
 .title {
     font-weight: 700;
     font-size: 16px;
@@ -134,6 +140,23 @@
 .markAllRead:hover {
     background: rgba(249, 115, 22, 0.1);
     color: #ff9a3c;
+}
+
+.clearAll {
+    background: none;
+    border: none;
+    color: #ef4444;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.clearAll:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
 }
 
 .list {
@@ -173,19 +196,36 @@
     opacity: 0.5;
 }
 
-.item {
-    padding: 16px 20px;
-    border-bottom: 1px solid #212127;
-    cursor: pointer;
-    transition: all 0.2s ease;
+.itemWrapper {
     position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid #212127;
 }
 
-.item:last-child {
+.itemWrapper:last-child {
     border-bottom: none;
 }
 
+.item {
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    background: transparent;
+    z-index: 1;
+}
+
+.item.swiping {
+    cursor: grabbing;
+}
+
 .item:hover {
+    background: rgba(255, 91, 55, 0.05);
+    border-left: 3px solid #f97316;
+    padding-left: 17px;
+}
+
+.itemWrapper:hover .item {
     background: rgba(255, 91, 55, 0.05);
     border-left: 3px solid #f97316;
     padding-left: 17px;
@@ -226,4 +266,23 @@
     font-size: 11px;
     color: #6b7280;
     font-weight: 400;
+}
+
+.deleteButton {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 100px;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    z-index: 0;
+    transition: opacity 0.2s ease, transform 0.3s ease;
+    user-select: none;
 }

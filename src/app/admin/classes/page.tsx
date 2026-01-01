@@ -3,7 +3,9 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { Calendar, Plus, Edit2, Trash2, Clock, Users } from 'lucide-react';
+import { Calendar, Plus, Edit2, Trash2, Clock, Users, X, Image as ImageIcon } from 'lucide-react';
+import Toast from '@/components/Toast/Toast';
+import { useToast } from '@/hooks/useToast';
 import styles from './classes.module.css';
 
 interface Class {
@@ -12,9 +14,9 @@ interface Class {
     description: string;
     schedule: string;
     duration_minutes: number;
-    trainer_name: string;
     max_capacity?: number;
     category?: string;
+    image_url?: string;
     created_at: string;
 }
 
@@ -23,16 +25,20 @@ export default function ClassesManagement() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editingClass, setEditingClass] = useState<Class | null>(null);
+    const { toast, toastType, showToast, hideToast } = useToast();
 
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
     const [schedule, setSchedule] = useState('');
     const [durationMinutes, setDurationMinutes] = useState('60');
-    const [trainerName, setTrainerName] = useState('');
     const [capacity, setCapacity] = useState('20');
     const [category, setCategory] = useState('General');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [categories, setCategories] = useState<string[]>(['All']);
+    const [imageUrl, setImageUrl] = useState<string>('');
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string>('');
+    const [uploadingImage, setUploadingImage] = useState(false);
 
     useEffect(() => {
         fetchClasses();
@@ -46,17 +52,15 @@ export default function ClassesManagement() {
                 .order('schedule', { ascending: true });
 
             if (error) {
-                console.error('Supabase error:', error);
                 throw error;
             }
 
-            console.log('Fetched classes:', data);
             setClasses(data || []);
             // derive categories for the admin filter
             const derived = ['All', ...new Set((data || []).map((c: any) => c.category || 'General'))];
             setCategories(derived as string[]);
         } catch (error) {
-            console.error('Error fetching classes:', error);
+            // Error fetching classes - handle silently or show user-friendly message
         } finally {
             setLoading(false);
         }
@@ -69,18 +73,22 @@ export default function ClassesManagement() {
             setDescription(classData.description);
             setSchedule(classData.schedule);
             setDurationMinutes(String(classData.duration_minutes));
-            setTrainerName(classData.trainer_name);
             setCapacity(String(classData.max_capacity || 20));
             setCategory(classData.category || 'General');
+            setImageUrl(classData.image_url || '');
+            setImagePreview(classData.image_url || '');
+            setImageFile(null);
         } else {
             setEditingClass(null);
             setName('');
             setDescription('');
             setSchedule('');
             setDurationMinutes('60');
-            setTrainerName('');
             setCapacity('20');
             setCategory('General');
+            setImageUrl('');
+            setImagePreview('');
+            setImageFile(null);
         }
         setShowModal(true);
     };
@@ -88,21 +96,121 @@ export default function ClassesManagement() {
     const handleCloseModal = () => {
         setShowModal(false);
         setEditingClass(null);
+        setImageUrl('');
+        setImagePreview('');
+        setImageFile(null);
+    };
+
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            showToast('Please upload an image file (JPEG, PNG, WebP).', 'error');
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            showToast('File size too large. Please choose an image under 5MB.', 'error');
+            return;
+        }
+
+        setImageFile(file);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setImagePreview(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleRemoveImage = async () => {
+        // If there's an existing image URL, delete it from storage
+        if (imageUrl && editingClass?.image_url) {
+            try {
+                const response = await fetch('/api/admin/classes/delete-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ imageUrl })
+                });
+
+                if (!response.ok) {
+                    // Continue anyway - user can still remove the image reference
+                }
+            } catch (err) {
+                // Continue anyway
+            }
+        }
+
+        setImageFile(null);
+        setImagePreview('');
+        setImageUrl('');
+    };
+
+    const uploadImage = async (): Promise<string | null> => {
+        if (!imageFile) {
+            return imageUrl || null;
+        }
+
+        try {
+            setUploadingImage(true);
+
+            // Use API endpoint for upload (server-side with service role)
+            const formData = new FormData();
+            formData.append('file', imageFile);
+            if (editingClass?.image_url && imageUrl) {
+                formData.append('oldImageUrl', imageUrl);
+            }
+
+            const response = await fetch('/api/admin/classes/upload-image', {
+                method: 'POST',
+                credentials: 'include',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to upload image');
+            }
+
+            return data.imageUrl;
+        } catch (error: any) {
+            showToast(`Failed to upload image: ${error.message}`, 'error');
+            return null;
+        } finally {
+            setUploadingImage(false);
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Upload image first if a new file is selected
+        let finalImageUrl: string | null = imageUrl || null;
+        if (imageFile) {
+            const uploadedUrl = await uploadImage();
+            if (!uploadedUrl) {
+                return; // Error already shown in uploadImage
+            }
+            finalImageUrl = uploadedUrl;
+        }
+
+        // If image was removed (no file and no URL), set to null
+        // The API will handle deleting the old image from storage
+        if (!imageFile && !imageUrl && editingClass?.image_url) {
+            finalImageUrl = null;
+        }
+
         const formData = {
             name,
             description,
             schedule,
             duration_minutes: parseInt(durationMinutes) || 60,
-            trainer_name: trainerName,
             max_capacity: parseInt(capacity) || 20,
-            category: category || 'General'
+            category: category || 'General',
+            image_url: finalImageUrl
         };
-
-        console.log('Submitting form data (via admin API):', formData);
 
         try {
             const url = '/api/admin/classes';
@@ -112,46 +220,44 @@ export default function ClassesManagement() {
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify(payload)
             });
 
             const json = await res.json().catch(() => ({}));
             if (!res.ok) {
-                console.error('Admin API error:', json);
                 throw new Error(json?.error || 'Failed to save class');
             }
 
-            alert(editingClass ? 'Class updated successfully!' : 'Class created successfully!');
+            showToast(editingClass ? 'Class updated successfully!' : 'Class created successfully!', 'success');
             handleCloseModal();
             fetchClasses();
         } catch (error: any) {
-            console.error('Error saving class via admin API:', error);
-            alert(`Failed to save class: ${error.message || 'Unknown error'}`);
+            showToast(`Failed to save class: ${error.message || 'Unknown error'}`, 'error');
         }
     };
 
     const handleDelete = async (classId: number) => {
-        if (!confirm('Are you sure you want to delete this class? All bookings and reviews for this class will also be deleted.')) {
+        if (!confirm('Are you sure you want to delete this class? All reviews for this class will also be deleted.')) {
             return;
         }
         try {
             const res = await fetch('/api/admin/classes', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ id: classId })
             });
 
             const json = await res.json().catch(() => ({}));
             if (!res.ok) {
-                console.error('Admin API delete error:', json);
                 throw new Error(json?.error || 'Failed to delete class');
             }
 
-            alert('Class deleted successfully!');
+            showToast('Class deleted successfully!', 'success');
             fetchClasses();
         } catch (error: any) {
-            console.error('Error deleting class via admin API:', error);
-            alert(`Failed to delete class: ${error.message || 'Unknown error'}`);
+            showToast(`Failed to delete class: ${error.message || 'Unknown error'}`, 'error');
         }
     };
 
@@ -227,6 +333,13 @@ export default function ClassesManagement() {
                 ) : (
                     filteredClasses.map((classItem) => (
                         <div key={classItem.id} className={styles.classCard}>
+                            {/* Class Image */}
+                            {classItem.image_url && (
+                                <div className={styles.classCardImage}>
+                                    <img src={classItem.image_url} alt={classItem.name} />
+                                </div>
+                            )}
+                            
                             <div className={styles.classCardHeader}>
                                 <h3>{classItem.name}</h3>
                                 {classItem.category && (
@@ -267,9 +380,6 @@ export default function ClassesManagement() {
                                 </div>
                             </div>
 
-                            <div className={styles.trainerInfo}>
-                                <strong>Trainer:</strong> {classItem.trainer_name}
-                            </div>
                         </div>
                     ))
                 )}
@@ -309,6 +419,41 @@ export default function ClassesManagement() {
                                     />
                                 </div>
 
+                                <div className={styles.formGroup}>
+                                    <label>Class Image</label>
+                                    <div className={styles.imageUploadContainer}>
+                                        {imagePreview ? (
+                                            <div className={styles.imagePreview}>
+                                                <img src={imagePreview} alt="Preview" loading="eager" />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleRemoveImage}
+                                                    className={styles.removeImageButton}
+                                                >
+                                                    <X size={20} />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <label className={styles.imageUploadLabel}>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={handleImageChange}
+                                                    style={{ display: 'none' }}
+                                                />
+                                                <div className={styles.imageUploadPlaceholder}>
+                                                    <ImageIcon size={32} />
+                                                    <span>Click to upload image</span>
+                                                    <small>PNG, JPG, WEBP up to 5MB</small>
+                                                </div>
+                                            </label>
+                                        )}
+                                    </div>
+                                    {uploadingImage && (
+                                        <p style={{ color: '#f97316', marginTop: '0.5rem' }}>Uploading image...</p>
+                                    )}
+                                </div>
+
                                 <div className={styles.formRow}>
                                     <div className={styles.formGroup}>
                                         <label>Schedule *</label>
@@ -335,17 +480,6 @@ export default function ClassesManagement() {
 
                                 <div className={styles.formRow}>
                                     <div className={styles.formGroup}>
-                                        <label>Trainer Name *</label>
-                                        <input
-                                            type="text"
-                                            value={trainerName}
-                                            onChange={(e) => setTrainerName(e.target.value)}
-                                            required
-                                            placeholder="Trainer's name"
-                                        />
-                                    </div>
-
-                                    <div className={styles.formGroup}>
                                         <label>Capacity *</label>
                                         <input
                                             type="number"
@@ -354,6 +488,17 @@ export default function ClassesManagement() {
                                             required
                                             min="1"
                                             max="100"
+                                        />
+                                    </div>
+
+                                    <div className={styles.formGroup}>
+                                        <label>Category *</label>
+                                        <input
+                                            type="text"
+                                            value={category}
+                                            onChange={(e) => setCategory(e.target.value)}
+                                            required
+                                            placeholder="e.g., Yoga, Cardio, Strength, Online"
                                         />
                                     </div>
                                 </div>
@@ -375,6 +520,7 @@ export default function ClassesManagement() {
                     </div>
                 </div>
             )}
+            <Toast message={toast} type={toastType} onClose={hideToast} />
         </div>
     );
 }

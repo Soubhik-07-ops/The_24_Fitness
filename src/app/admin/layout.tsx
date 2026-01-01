@@ -7,6 +7,7 @@ import Link from 'next/link';
 import {
     BarChart3,
     Users,
+    User,
     Calendar,
     MessageSquare,
     BookOpen,
@@ -15,21 +16,43 @@ import {
     Menu,
     X,
     Home,
-    MessageSquareDashedIcon
+    MessageSquareDashedIcon,
+    CreditCard,
+    FileText,
+    Tag
 } from 'lucide-react';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import RealtimeNotifications from '@/components/Notifications/RealtimeNotifications';
 import NotificationBell from '@/components/Notifications/NotificationBell';
+import './admin-variables.css';
 import styles from './admin.module.css';
 
+// Professional navigation order: Dashboard → User Management → Business → Content → Communication → Reports → Settings
 const navigation = [
+    // Overview
     { name: 'Dashboard', href: '/admin', icon: BarChart3 },
+    
+    // User Management
     { name: 'Users', href: '/admin/users', icon: Users },
-    { name: 'Messages', href: '/admin/messages', icon: MessageSquareDashedIcon },
+    { name: 'Trainers', href: '/admin/trainers', icon: User },
+    { name: 'Gym Owner', href: '/admin/gym-owner', icon: User },
+    
+    // Business Operations
+    { name: 'Memberships', href: '/admin/memberships', icon: CreditCard },
+    { name: 'Offers', href: '/admin/offers', icon: Tag },
+    
+    // Content Management
     { name: 'Classes', href: '/admin/classes', icon: Calendar },
     { name: 'Reviews', href: '/admin/reviews', icon: MessageSquare },
-    { name: 'Bookings', href: '/admin/bookings', icon: BookOpen },
-    { name: 'Settings', href: '/admin/settings', icon: Settings },
+    
+    // Communication
+    { name: 'Messages', href: '/admin/messages', icon: MessageSquareDashedIcon },
+    
+    // Reports & Analytics
+    { name: 'Weekly Charts', href: '/admin/weekly-charts', icon: FileText },
+    
+    // Configuration
+    { name: 'Settings', href: '/admin/settings', icon: Settings }
 ];
 
 export default function AdminLayout({
@@ -81,7 +104,7 @@ export default function AdminLayout({
             {/* Sidebar */}
             <div className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ''}`}>
                 <div className={styles.sidebarHeader}>
-                    <h2 className={styles.logo}>THE24FITNESS ADMIN</h2>
+                    <h2 className={styles.logo}>THE 24 FITNESS GYM ADMIN</h2>
                     <button
                         onClick={() => setSidebarOpen(false)}
                         className={styles.closeButton}

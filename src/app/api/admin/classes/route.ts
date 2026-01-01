@@ -6,7 +6,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('Missing Supabase server env vars for admin classes API');
+    // Environment variables will be checked at runtime
 }
 
 const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', {
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
 
         // Basic input sanitization / allowed fields
-        const allowed = ['name', 'description', 'schedule', 'duration_minutes', 'trainer_name', 'max_capacity', 'category'];
+        const allowed = ['name', 'description', 'schedule', 'duration_minutes', 'max_capacity', 'category', 'image_url'];
         const payload: any = {};
         for (const key of allowed) {
             if (body[key] !== undefined) payload[key] = body[key];
@@ -75,8 +75,15 @@ export async function PUT(request: NextRequest) {
 
         if (!id) return NextResponse.json({ success: false, error: 'Missing id for update' }, { status: 400 });
 
+        // Get current class data to check for old image
+        const { data: currentClass } = await supabaseAdmin
+            .from('classes')
+            .select('image_url')
+            .eq('id', id)
+            .single();
+
         // Only allow whitelisted fields
-        const allowed = ['name', 'description', 'schedule', 'duration_minutes', 'trainer_name', 'max_capacity', 'category'];
+        const allowed = ['name', 'description', 'schedule', 'duration_minutes', 'max_capacity', 'category', 'image_url'];
         const updatePayload: any = {};
         for (const key of allowed) {
             if (rest[key] !== undefined) updatePayload[key] = rest[key];
@@ -84,6 +91,27 @@ export async function PUT(request: NextRequest) {
 
         if (updatePayload.duration_minutes !== undefined) updatePayload.duration_minutes = parseInt(updatePayload.duration_minutes) || 60;
         if (updatePayload.max_capacity !== undefined) updatePayload.max_capacity = parseInt(updatePayload.max_capacity) || 20;
+
+        // Delete old image from storage if image_url is being removed or changed
+        if (currentClass?.image_url) {
+            const newImageUrl = updatePayload.image_url;
+            // If image_url is null/empty or different from current, delete old image
+            if (!newImageUrl || newImageUrl !== currentClass.image_url) {
+                try {
+                    const urlParts = currentClass.image_url.split('/');
+                    const pathIndex = urlParts.findIndex((part: string) => part === 'class-images');
+                    if (pathIndex !== -1 && pathIndex < urlParts.length - 1) {
+                        const imagePath = urlParts.slice(pathIndex + 1).join('/');
+                        await supabaseAdmin.storage
+                            .from('class-images')
+                            .remove([imagePath]);
+                    }
+                } catch (imgErr) {
+                    console.warn('Error deleting old image during update:', imgErr);
+                    // Continue with update even if image deletion fails
+                }
+            }
+        }
 
         const { data, error } = await supabaseAdmin.from('classes').update(updatePayload).eq('id', id).select();
 
@@ -119,12 +147,49 @@ export async function DELETE(request: NextRequest) {
 
         if (!id) return NextResponse.json({ success: false, error: 'Missing id for delete' }, { status: 400 });
 
-        // Remove related bookings and reviews first to avoid FK issues (if cascade not configured)
-        const { error: bookingsError } = await supabaseAdmin.from('bookings').delete().eq('class_id', id);
-        if (bookingsError) console.error('Error deleting bookings for class:', bookingsError);
+        // Get class data including image_url before deleting
+        const { data: classData, error: classFetchError } = await supabaseAdmin
+            .from('classes')
+            .select('name, image_url')
+            .eq('id', id)
+            .single();
 
+        if (classFetchError || !classData) {
+            console.error('Error fetching class:', classFetchError);
+            return NextResponse.json({ success: false, error: 'Class not found' }, { status: 404 });
+        }
+
+        const className = classData.name || 'the class';
+
+        // Delete image from storage if it exists
+        if (classData.image_url) {
+            try {
+                // Extract path from URL (e.g., "classes/1234567890_abc123.jpg")
+                const urlParts = classData.image_url.split('/');
+                const pathIndex = urlParts.findIndex((part: string) => part === 'class-images');
+                if (pathIndex !== -1 && pathIndex < urlParts.length - 1) {
+                    const imagePath = urlParts.slice(pathIndex + 1).join('/');
+                    const { error: deleteImageError } = await supabaseAdmin.storage
+                        .from('class-images')
+                        .remove([imagePath]);
+
+                    if (deleteImageError) {
+                        console.warn('Error deleting class image from storage:', deleteImageError);
+                        // Continue with class deletion even if image deletion fails
+                    }
+                }
+            } catch (imgErr) {
+                console.warn('Error processing image deletion:', imgErr);
+                // Continue with class deletion even if image deletion fails
+            }
+        }
+
+        // Booking system removed - just clean up reviews
         const { error: reviewsError } = await supabaseAdmin.from('reviews').delete().eq('class_id', id);
-        if (reviewsError) console.error('Error deleting reviews for class:', reviewsError);
+        if (reviewsError) {
+            console.error('Error deleting reviews for class:', reviewsError);
+            // Continue anyway - might be cascade delete
+        }
 
         const { error } = await supabaseAdmin.from('classes').delete().eq('id', id);
 
@@ -132,6 +197,8 @@ export async function DELETE(request: NextRequest) {
             console.error('Admin classes DELETE error:', error);
             return NextResponse.json({ success: false, error: error.message || error }, { status: 500 });
         }
+
+        // Booking system removed - no notifications needed
 
         // Audit
         try {

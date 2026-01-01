@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import styles from './ClassList.module.css';
-import { Calendar, Clock, User as UserIcon, Users, Loader2, Check, X, Wifi, WifiOff } from 'lucide-react';
+import { Calendar, Clock, User as UserIcon, Users, Wifi, WifiOff, Loader2 } from 'lucide-react';
 import StarRating from '../Reviews/StarRating';
 
 // Define a type for our class data with capacity tracking
@@ -17,8 +17,9 @@ export type Class = {
     duration_minutes: number;
     trainer_name: string;
     max_capacity: number;
-    current_bookings?: number;
+    // Booking system removed
     category?: string;
+    image_url?: string;
     review_stats?: {
         average_rating: number;
         total_reviews: number;
@@ -27,24 +28,13 @@ export type Class = {
 
 export default function ClassList() {
     const [classes, setClasses] = useState<Class[]>([]);
-    const [userBookings, setUserBookings] = useState<number[]>([]);
     const [loading, setLoading] = useState(true);
-    const [bookingLoading, setBookingLoading] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [userId, setUserId] = useState<string | null>(null);
     const [isOnline, setIsOnline] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState<string>('All');
     const [categories, setCategories] = useState<string[]>(['All']);
 
     useEffect(() => {
-        const getUserId = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                setUserId(session.user.id);
-                fetchUserBookings(session.user.id);
-            }
-        };
-
         const fetchClassesWithCapacity = async () => {
             setLoading(true);
             try {
@@ -60,20 +50,11 @@ export default function ClassList() {
                         // Normalize id (Postgres bigint may come as string)
                         const classId = Number(classItem.id);
 
-                        const [bookingsData, reviewStats] = await Promise.all([
-                            supabase
-                                .from('bookings')
-                                .select('id')
-                                .eq('class_id', classId),
-                            fetchReviewStats(classId)
-                        ]);
-
-                        if (bookingsData.error) throw bookingsData.error;
+                        const reviewStats = await fetchReviewStats(classId);
 
                         return {
                             ...classItem,
                             id: classId,
-                            current_bookings: bookingsData.data?.length || 0,
                             category: classItem.category || 'General',
                             review_stats: reviewStats || {
                                 average_rating: 0,
@@ -92,10 +73,10 @@ export default function ClassList() {
             }
         };
 
-        getUserId();
         fetchClassesWithCapacity();
         setupRealtimeSubscriptions();
     }, []);
+
 
     // Function to fetch review statistics for a class
     const fetchReviewStats = async (classId: number) => {
@@ -134,22 +115,10 @@ export default function ClassList() {
         }
     }, [classes]);
 
-    // Real-time subscription for bookings AND reviews
+    // Real-time subscription for reviews
     const setupRealtimeSubscriptions = () => {
-        const bookingsSubscription = supabase
-            .channel('bookings-changes')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'bookings'
-                },
-                async (payload) => {
-                    console.log('Bookings change received:', payload);
-                    await refreshAllData();
-                }
-            )
+        const reviewsSubscription = supabase
+            .channel('reviews-changes')
             .on(
                 'postgres_changes',
                 {
@@ -168,15 +137,11 @@ export default function ClassList() {
             });
 
         return () => {
-            bookingsSubscription.unsubscribe();
+            reviewsSubscription.unsubscribe();
         };
     };
 
     const refreshAllData = async () => {
-        if (userId) {
-            await fetchUserBookings(userId);
-        }
-
         // Refresh classes data with review stats
         const { data: classesData } = await supabase
             .from('classes')
@@ -187,18 +152,11 @@ export default function ClassList() {
             const classesWithCapacity = await Promise.all(
                 classesData.map(async (classItem) => {
                     const classId = Number(classItem.id);
-                    const [bookingsData, reviewStats] = await Promise.all([
-                        supabase
-                            .from('bookings')
-                            .select('id')
-                            .eq('class_id', classId),
-                        fetchReviewStats(classId)
-                    ]);
+                    const reviewStats = await fetchReviewStats(classId);
 
                     return {
                         ...classItem,
                         id: classId,
-                        current_bookings: bookingsData.data?.length || 0,
                         category: classItem.category || 'General',
                         review_stats: reviewStats || {
                             average_rating: 0,
@@ -211,91 +169,6 @@ export default function ClassList() {
         }
     };
 
-    const fetchUserBookings = async (userId: string) => {
-        try {
-            const { data, error } = await supabase
-                .from('bookings')
-                .select('class_id')
-                .eq('user_id', userId);
-
-            if (error) throw error;
-
-            const bookedClassIds = data?.map(booking => Number(booking.class_id)) || [];
-            setUserBookings(bookedClassIds);
-        } catch (error) {
-            console.error('Error fetching user bookings:', error);
-        }
-    };
-
-    const handleBookClass = async (classId: number) => {
-        if (!userId) {
-            alert('You must be logged in to book a class.');
-            return;
-        }
-
-        if (userBookings.includes(classId)) {
-            alert('You have already booked this class!');
-            return;
-        }
-
-        setBookingLoading(classId);
-
-        try {
-            const selectedClass = classes.find(c => c.id === classId);
-            if (!selectedClass) return;
-
-            if (selectedClass.current_bookings && selectedClass.current_bookings >= selectedClass.max_capacity) {
-                alert('This class is fully booked! Please choose another time.');
-                return;
-            }
-
-            const { data, error: bookingError } = await supabase
-                .from('bookings')
-                .insert([
-                    {
-                        user_id: userId,
-                        class_id: classId
-                    }
-                ])
-                .select();
-
-            if (bookingError) throw bookingError;
-
-            await refreshAllData();
-            alert('Class booked successfully! 🎉');
-
-        } catch (error: any) {
-            console.error('Error booking class:', error);
-            alert(`Booking failed: ${error.message}`);
-        } finally {
-            setBookingLoading(null);
-        }
-    };
-
-    const handleCancelBooking = async (classId: number) => {
-        if (!userId) return;
-
-        setBookingLoading(classId);
-
-        try {
-            const { error } = await supabase
-                .from('bookings')
-                .delete()
-                .eq('user_id', userId)
-                .eq('class_id', classId);
-
-            if (error) throw error;
-
-            await refreshAllData();
-            alert('Booking cancelled successfully.');
-
-        } catch (error: any) {
-            console.error('Error cancelling booking:', error);
-            alert(`Cancellation failed: ${error.message}`);
-        } finally {
-            setBookingLoading(null);
-        }
-    };
 
     // Helper to format the date
     const formatDateTime = (isoString: string) => {
@@ -310,16 +183,6 @@ export default function ClassList() {
         });
     };
 
-    // Helper to get spots remaining
-    const getSpotsRemaining = (classItem: Class) => {
-        const current = classItem.current_bookings || 0;
-        const remaining = classItem.max_capacity - current;
-        return Math.max(0, remaining);
-    };
-
-    const isClassFull = (classItem: Class) => {
-        return getSpotsRemaining(classItem) === 0;
-    };
 
     // Filter classes by category
     const filteredClasses = selectedCategory === 'All'
@@ -358,7 +221,7 @@ export default function ClassList() {
                     </div>
                 </div>
                 <p className={styles.subtitle}>
-                    Find your next challenge. Book a spot and get ready to sweat.
+                    Explore our class schedule and find your perfect fit.
                     {isOnline && <span className={styles.liveBadge}> • Live Updates</span>}
                 </p>
             </div>
@@ -379,10 +242,6 @@ export default function ClassList() {
 
             <div className={styles.grid}>
                 {filteredClasses.map((classItem) => {
-                    const isBooked = userBookings.includes(classItem.id);
-                    const isBooking = bookingLoading === classItem.id;
-                    const spotsRemaining = getSpotsRemaining(classItem);
-                    const isFull = isClassFull(classItem);
                     const hasReviews = classItem.review_stats && classItem.review_stats.total_reviews > 0;
 
                     return (
@@ -432,49 +291,15 @@ export default function ClassList() {
                                     </div>
                                     <div className={styles.infoItem}>
                                         <Users size={16} />
-                                        <span>
-                                            {spotsRemaining} of {classItem.max_capacity} spots left
-                                            {spotsRemaining <= 3 && spotsRemaining > 0 && (
-                                                <span className={styles.lowSpots}> • Almost full!</span>
-                                            )}
-                                        </span>
+                                        <span>Max Capacity: {classItem.max_capacity}</span>
                                     </div>
                                 </div>
                             </a>
-
-                            {/* Booking Button (stays outside the link) */}
-                            <button
-                                className={`${styles.bookButton} ${isBooked ? styles.booked : ''
-                                    } ${isFull ? styles.full : ''}`}
-                                onClick={() => isBooked ? handleCancelBooking(classItem.id) : handleBookClass(classItem.id)}
-                                disabled={(!userId && !isBooked) || isBooking}
-                            >
-                                {isBooking ? (
-                                    <>
-                                        <Loader2 className={styles.spinner} size={16} />
-                                        {isBooked ? 'Cancelling...' : 'Booking...'}
-                                    </>
-                                ) : isBooked ? (
-                                    <>
-                                        <X size={20} />
-                                        Cancel Booking
-                                    </>
-                                ) : isFull ? (
-                                    <>
-                                        <X size={20} />
-                                        Class Full
-                                    </>
-                                ) : (
-                                    <>
-                                        <Check size={20} />
-                                        Book Spot
-                                    </>
-                                )}
-                            </button>
                         </div>
                     );
                 })}
             </div>
+
         </div>
     );
 }

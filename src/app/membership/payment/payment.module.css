@@ -1,0 +1,569 @@
+.container {
+    min-height: calc(100vh - 8rem);
+    padding: 2rem 1rem;
+    background: #000;
+    color: white;
+    max-width: 60rem;
+    margin: 0 auto;
+}
+
+.header {
+    margin-bottom: 2rem;
+}
+
+.backButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.5rem;
+    color: #d1d5db;
+    text-decoration: none;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.backButton:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.title {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #f97316, #dc2626);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.planSummary {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+.planName,
+.planType {
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.planName {
+    background: linear-gradient(135deg, #f97316, #dc2626);
+    color: white;
+}
+
+.planType {
+    background: rgba(255, 255, 255, 0.1);
+    color: #d1d5db;
+}
+
+/* Price Breakdown Section */
+.priceBreakdown {
+    background: linear-gradient(135deg, #1f2937, #111827);
+    border: 1px solid #374151;
+    border-radius: 1rem;
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.priceTitle {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: #fff;
+    border-bottom: 2px solid #f97316;
+    padding-bottom: 0.5rem;
+}
+
+.priceDetails {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.priceRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.priceRow:last-of-type {
+    border-bottom: none;
+}
+
+.priceLabel {
+    color: #d1d5db;
+    font-size: 1rem;
+}
+
+.priceValue {
+    color: #fff;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.priceRowTotal {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 0;
+    margin-top: 0.5rem;
+    border-top: 2px solid #374151;
+    border-bottom: none;
+}
+
+.totalLabel {
+    color: #fff;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.totalValue {
+    color: #10b981;
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+/* Add-ons Container - Separate from form */
+.addonsContainer {
+    background: linear-gradient(135deg, #1f2937, #111827);
+    border: 1px solid #374151;
+    border-radius: 1rem;
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.addonsTitle {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: #fff;
+    border-bottom: 2px solid #f97316;
+    padding-bottom: 0.5rem;
+}
+
+.form {
+    background: linear-gradient(135deg, #1f2937, #111827);
+    border: 1px solid #374151;
+    border-radius: 1rem;
+    padding: 2rem;
+}
+
+.section {
+    margin-bottom: 2.5rem;
+}
+
+.section:last-of-type {
+    margin-bottom: 0;
+}
+
+.sectionTitle {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: #fff;
+    border-bottom: 2px solid #f97316;
+    padding-bottom: 0.5rem;
+}
+
+/* QR Code Section */
+.qrSection {
+    text-align: center;
+}
+
+.qrCode {
+    max-width: 300px;
+    width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    border: 2px solid #374151;
+    margin-bottom: 1rem;
+}
+
+.qrPlaceholder {
+    padding: 3rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px dashed #374151;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.qrPlaceholder p {
+    margin: 0.5rem 0;
+    color: #9ca3af;
+}
+
+.qrNote {
+    font-size: 0.9rem;
+    color: #6b7280;
+}
+
+.qrInstructions {
+    color: #d1d5db;
+    font-size: 0.95rem;
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+/* Form Grid */
+.formGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.formGroup {
+    display: flex;
+    flex-direction: column;
+}
+
+.formGroup label {
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #d1d5db;
+    font-size: 0.95rem;
+}
+
+.formGroup input {
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #374151;
+    border-radius: 0.5rem;
+    color: white;
+    font-size: 1rem;
+    transition: all 0.2s;
+}
+
+.formGroup input:focus {
+    outline: none;
+    border-color: #f97316;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
+}
+
+.formGroup input[readonly] {
+    background: rgba(0, 0, 0, 0.2);
+    color: #9ca3af;
+    cursor: not-allowed;
+}
+
+.totalAmountInput {
+    background: rgba(16, 185, 129, 0.1) !important;
+    border-color: #10b981 !important;
+    color: #10b981 !important;
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+/* Upload Section */
+.uploadSection {
+    text-align: center;
+}
+
+.uploadLabel {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 3rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px dashed #374151;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    max-width: 400px;
+}
+
+.uploadLabel:hover {
+    border-color: #f97316;
+    background: rgba(249, 115, 22, 0.05);
+}
+
+.fileInput {
+    display: none;
+}
+
+.previewContainer {
+    position: relative;
+    display: inline-block;
+    max-width: 400px;
+    width: 100%;
+}
+
+.previewImage {
+    width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    border: 2px solid #374151;
+}
+
+.removeButton {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    padding: 0.5rem;
+    background: rgba(239, 68, 68, 0.9);
+    border: none;
+    border-radius: 0.5rem;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: all 0.2s;
+}
+
+.removeButton:hover {
+    background: rgba(239, 68, 68, 1);
+}
+
+.uploadNote {
+    margin-top: 1rem;
+    color: #9ca3af;
+    font-size: 0.9rem;
+}
+
+/* Add-ons Section */
+.addonsSection {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.addonCard {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #374151;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+}
+
+.addonLabel {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    cursor: pointer;
+}
+
+.checkbox,
+.radio {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    margin-top: 0.25rem;
+}
+
+.addonContent h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.1rem;
+    color: #fff;
+}
+
+.addonContent p {
+    margin: 0;
+    color: #9ca3af;
+    font-size: 0.9rem;
+}
+
+.addonPrice {
+    color: #10b981 !important;
+    font-weight: 600;
+    margin-top: 0.25rem !important;
+}
+
+.trainerSelection {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #374151;
+}
+
+.trainerLabel {
+    display: block;
+    margin-bottom: 1rem;
+    font-weight: 600;
+    color: #d1d5db;
+}
+
+.trainerOptions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.trainerOption {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px solid #374151;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.trainerOption:hover {
+    border-color: #f97316;
+    background: rgba(249, 115, 22, 0.05);
+}
+
+.trainerOption.selected {
+    border-color: #f97316;
+    background: rgba(249, 115, 22, 0.1);
+}
+
+.trainerInfo {
+    flex: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.trainerName {
+    font-weight: 600;
+    color: #fff;
+}
+
+.trainerPrice {
+    color: #10b981;
+    font-weight: 600;
+}
+
+.checkIcon {
+    color: #10b981;
+}
+
+.totalAmount {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 2px solid #374151;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.totalPrice {
+    color: #10b981;
+    font-size: 1.5rem;
+}
+
+/* Total Amount Section after Add-ons */
+.totalAmountSection {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 2px solid #374151;
+}
+
+.totalAmountRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: rgba(16, 185, 129, 0.1);
+    border: 2px solid #10b981;
+    border-radius: 0.5rem;
+}
+
+.formActions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 1px solid #374151;
+}
+
+.cancelButton,
+.submitButton {
+    padding: 0.75rem 2rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cancelButton {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #d1d5db;
+}
+
+.cancelButton:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.submitButton {
+    background: linear-gradient(135deg, #f97316, #dc2626);
+    border: none;
+    color: white;
+}
+
+.submitButton:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(249, 115, 22, 0.3);
+}
+
+.submitButton:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.loading {
+    text-align: center;
+    padding: 3rem;
+    color: #9ca3af;
+    font-size: 1.2rem;
+}
+
+@media (max-width: 768px) {
+    .formGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .formActions {
+        flex-direction: column;
+    }
+
+    .cancelButton,
+    .submitButton {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .trainerInfo {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+}
