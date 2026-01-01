@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { ArrowLeft, Loader2 } from 'lucide-react'
@@ -147,7 +147,7 @@ interface ComprehensiveFormData {
     weightLossImportance: string
 }
 
-export default function MembershipFormPage() {
+function MembershipFormContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const [loading, setLoading] = useState(false)
@@ -882,5 +882,17 @@ export default function MembershipFormPage() {
             <Toast message={toast} type={toastType} onClose={hideToast} />
             <Footer />
         </>
+    )
+}
+
+export default function MembershipFormPage() {
+    return (
+        <Suspense fallback={
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+                <Loader2 className={styles.spinner} size={40} />
+            </div>
+        }>
+            <MembershipFormContent />
+        </Suspense>
     )
 }
