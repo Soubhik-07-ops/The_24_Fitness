@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
         // Extract path from URL (e.g., "classes/1234567890_abc123.jpg")
         const urlParts = imageUrl.split('/');
-        const pathIndex = urlParts.findIndex(part => part === 'class-images');
+        const pathIndex = urlParts.findIndex((part: string) => part === 'class-images');
         
         if (pathIndex === -1 || pathIndex >= urlParts.length - 1) {
             return NextResponse.json({ success: false, error: 'Invalid image URL format' }, { status: 400 });
