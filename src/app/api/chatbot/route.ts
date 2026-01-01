@@ -78,7 +78,7 @@ const KNOWLEDGE_BASE = {
         addon: "Trainer addon allows you to add a trainer to your membership:\n1. Available for all plans\n2. Can be added during membership purchase\n3. Or added later as an addon\n4. Trainer addon has its own duration and pricing\n\nCheck Dashboard for trainer addon options.",
     },
     charts: {
-        weekly: "Weekly fitness charts are uploaded by your assigned trainer or admin. You can view them in:\nDashboard → Weekly Charts section\n\nThese charts show:\n- Workout plans (all plans)\n- Diet plans (Premium/Elite only)\n\nCharts are organized by week number.",
+        weekly: "Weekly fitness charts are uploaded by your assigned trainer or admin. You can view them in:\nDashboard → Weekly Charts section\n\nThese charts show:\n- Workout plans (all plans)\n- Diet plans (Premium/Elite only)\n- Weekly progress tracking\n\nCharts are organized by week number.",
         download: "Yes! You can download your weekly charts:\n1. Go to Dashboard\n2. Scroll to Weekly Charts section\n3. Click 'Download' button on any chart\n4. Charts are available as PDF or image files\n\nDownload all your charts to track your fitness journey!",
         missing: "If you don't see weekly charts:\n1. Check if your membership is active\n2. Verify trainer is assigned\n3. Charts are uploaded weekly by trainer\n4. Basic plan only gets workout charts\n5. Premium/Elite get both workout and diet charts\n\nIf charts are missing, contact your trainer or use Contact page.",
     },

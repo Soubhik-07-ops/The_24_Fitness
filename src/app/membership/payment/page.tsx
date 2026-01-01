@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { ArrowLeft, Loader2, Upload, X, Check } from 'lucide-react'
@@ -19,7 +19,7 @@ interface Trainer {
 // Trainers will be fetched from API - no hardcoded values
 const trainers: Trainer[] = []
 
-export default function PaymentPage() {
+function PaymentPageContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const [loading, setLoading] = useState(false)
@@ -565,6 +565,18 @@ export default function PaymentPage() {
             <Toast message={toast} type={toastType} onClose={hideToast} />
             <Footer />
         </>
+    )
+}
+
+export default function PaymentPage() {
+    return (
+        <Suspense fallback={
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+                <Loader2 className={styles.spinner} size={40} />
+            </div>
+        }>
+            <PaymentPageContent />
+        </Suspense>
     )
 }
 

@@ -116,6 +116,7 @@
     from {
         transform: rotate(0deg);
     }
+
     to {
         transform: rotate(360deg);
     }
@@ -172,63 +173,6 @@
     border-radius: 0.25rem;
 }
 
-/* Google Sign In Button */
-.googleButton {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    width: 100%;
-    background: white;
-    color: #374151;
-    border: 1px solid #d1d5db;
-    padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
-    font-weight: 600;
-    font-size: 0.9375rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    margin-bottom: 1.5rem;
-}
-
-.googleButton:hover:not(:disabled) {
-    background: #f9fafb;
-    border-color: #9ca3af;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    transform: translateY(-1px);
-}
-
-.googleButton:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.googleIcon {
-    flex-shrink: 0;
-}
-
-/* Divider */
-.divider {
-    display: flex;
-    align-items: center;
-    text-align: center;
-    margin: 1.5rem 0;
-    color: #6b7280;
-    font-size: 0.875rem;
-}
-
-.divider::before,
-.divider::after {
-    content: '';
-    flex: 1;
-    border-bottom: 1px solid #374151;
-}
-
-.divider span {
-    padding: 0 1rem;
-    background: linear-gradient(135deg, #1a1a1a, #0f0f0f);
-}
-
 /* Loading Overlay */
 .loadingOverlay {
     position: fixed;
@@ -249,6 +193,7 @@
     from {
         opacity: 0;
     }
+
     to {
         opacity: 1;
     }
