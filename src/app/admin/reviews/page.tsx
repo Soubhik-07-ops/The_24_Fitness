@@ -43,7 +43,7 @@ export default function ReviewsManagement() {
 
     useEffect(() => {
         fetchReviews();
-        
+
         // Set up real-time subscription for reviews (using regular client for notifications)
         // The actual data fetch uses admin API which bypasses RLS
         const channel = supabase
@@ -69,7 +69,7 @@ export default function ReviewsManagement() {
     const fetchReviews = async () => {
         try {
             setLoading(true);
-            
+
             // Fetch reviews using admin API (bypasses RLS policies)
             const reviewsResponse = await fetch('/api/admin/reviews/list', {
                 credentials: 'include',
@@ -90,8 +90,8 @@ export default function ReviewsManagement() {
             }
 
             // Get unique user IDs and class IDs (filter out null class_ids)
-            const userIds = [...new Set(reviewsData.map(r => r.user_id).filter(Boolean))];
-            const classIds = [...new Set(reviewsData.map(r => r.class_id).filter((id): id is number => id !== null))];
+            const userIds = [...new Set(reviewsData.map((r: Review) => r.user_id).filter(Boolean))];
+            const classIds = [...new Set(reviewsData.map((r: Review) => r.class_id).filter((id: number | null): id is number => id !== null))];
 
             // Fetch user data from admin API
             let allUsers: any[] = [];
@@ -135,7 +135,7 @@ export default function ReviewsManagement() {
             }
 
             // Map data - ensure ALL reviews are included, even if user/class lookup fails
-            const mappedReviews = reviewsData.map(review => {
+            const mappedReviews = reviewsData.map((review: Review) => {
                 const user = review.user_id ? usersData?.find(u => u.id === review.user_id) : null;
                 const classData = review.class_id ? classesData?.find(c => c.id === review.class_id) : null;
 
@@ -150,8 +150,8 @@ export default function ReviewsManagement() {
             // Logs for debugging (can be removed in production)
             if (process.env.NODE_ENV === 'development') {
                 console.log('📊 Total reviews fetched:', reviewsData.length);
-                console.log('📊 Pending:', mappedReviews.filter(r => !r.is_approved).length);
-                console.log('📊 Approved:', mappedReviews.filter(r => r.is_approved).length);
+                console.log('📊 Pending:', mappedReviews.filter((r: Review) => !r.is_approved).length);
+                console.log('📊 Approved:', mappedReviews.filter((r: Review) => r.is_approved).length);
             }
 
             setReviews(mappedReviews);
@@ -261,7 +261,7 @@ export default function ReviewsManagement() {
     // Group reviews by user
     const userGroups = useMemo(() => {
         let filtered = reviews;
-        
+
         if (filter === 'pending') {
             filtered = reviews.filter(review => review.is_approved === false);
         } else if (filter === 'approved') {
@@ -269,7 +269,7 @@ export default function ReviewsManagement() {
         } else if (filter !== 'all') {
             filtered = reviews.filter(review => review.rating === parseInt(filter));
         }
-        
+
         const grouped = new Map<string, UserGroup>();
 
         filtered.forEach(review => {
