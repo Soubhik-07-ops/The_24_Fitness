@@ -283,9 +283,9 @@ export default function TrainerChatWindow({ trainerId, trainerName }: TrainerCha
             const data = await response.json();
 
             if (!response.ok) {
-                // If error is about booking, update state
-                if (data.error && data.error.includes('booking')) {
-                    await checkBookingStatus();
+                // If error is about booking/access, update state
+                if (data.error && (data.error.includes('booking') || data.error.includes('access'))) {
+                    await checkTrainerAccess();
                 }
                 throw new Error(data.error || 'Failed to send message');
             }
