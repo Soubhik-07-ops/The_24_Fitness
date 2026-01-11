@@ -99,10 +99,12 @@
 
 @media (max-width: 480px) {
     .dropdown {
+        position: fixed;
+        left: 0.5rem;
         right: 0.5rem;
-        left: auto;
-        width: calc(100vw - 1rem);
-        max-width: calc(100vw - 1rem);
+        top: calc(4.5rem + 12px);
+        width: auto;
+        max-width: none;
         min-width: 0;
     }
 }
