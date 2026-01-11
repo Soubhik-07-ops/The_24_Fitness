@@ -90,131 +90,129 @@ export default function Navbar() {
                 </div>
             )}
             <nav className={styles.navbar}>
-            <div className={styles.container}>
-                {/* Logo */}
-                <div className={styles.logo} onClick={() => router.push('/')}>
-                    <Dumbbell size={28} color="#f97316" />
-                    <span className={styles.logoText}> FITNESS</span>
-                </div>
+                <div className={styles.container}>
+                    {/* Logo */}
+                    <div className={styles.logo} onClick={() => router.push('/')}>
+                        <Dumbbell size={28} color="#f97316" />
+                        <span className={styles.logoText}> FITNESS</span>
+                    </div>
 
-                {/* Desktop Menu */}
-                <div className={styles.desktopMenu}>
-                    {menuItems.map((item) => (
-                        <button
-                            key={item.name}
-                            onClick={() => handleNavClick(item.path)}
-                            className={styles.menuItem}
-                        >
-                            {item.name}
-                        </button>
-                    ))}
-                    {user && (
-                        <button
-                            onClick={() => handleNavClick('/dashboard')}
-                            className={styles.menuItem}
-                        >
-                            Dashboard
-                        </button>
-                    )}
-                    {user && <NotificationBell mode="user" />}
-                    {user ? (
-                        <button 
-                            onClick={handleLogout} 
-                            className={styles.joinButton}
-                            disabled={isLoggingOut}
-                        >
-                            {isLoggingOut ? (
-                                <span className={styles.logoutLoading}>
-                                    <Loader2 className={styles.logoutSpinner} size={16} />
-                                    Logging Out...
-                                </span>
-                            ) : (
-                                'Log Out'
-                            )}
-                        </button>
-                    ) : (
-                        <button
-                            onClick={() => handleNavClick('/signup')}
-                            className={styles.joinButton}
-                        >
-                            Join Now
-                        </button>
-                    )}
-                </div>
-
-                {/* Mobile Toggle */}
-                <button
-                    className={styles.mobileMenuButton}
-                    onClick={() => setIsOpen(!isOpen)}
-                    aria-label="Toggle menu"
-                >
-                    {isOpen ? <X size={26} /> : <Menu size={26} />}
-                </button>
-            </div>
-
-            {/* Mobile Dropdown */}
-            <AnimatePresence>
-                {isOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ duration: 0.25 }}
-                        className={styles.mobileMenu}
-                    >
-                        <div className={styles.mobileMenuInner}>
-                            {menuItems.map((item) => (
-                                <button
-                                    key={item.name}
-                                    onClick={() => handleNavClick(item.path)}
-                                    className={styles.mobileMenuItem}
-                                >
-                                    {item.name}
-                                </button>
-                            ))}
-                            {user && (
-                                <button
-                                    onClick={() => handleNavClick('/dashboard')}
-                                    className={styles.mobileMenuItem}
-                                >
-                                    Dashboard
-                                </button>
-                            )}
-                            {user && (
-                                <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'center' }}>
-                                    <NotificationBell mode="user" />
-                                </div>
-                            )}
-                            <div className={styles.mobileButtonContainer}>
-                                {user ? (
-                                    <button 
-                                        onClick={handleLogout} 
-                                        className={styles.mobileJoinButton}
-                                        disabled={isLoggingOut}
-                                    >
-                                        {isLoggingOut ? (
-                                            <span className={styles.logoutLoading}>
-                                                <Loader2 className={styles.logoutSpinner} size={16} />
-                                                Logging Out...
-                                            </span>
-                                        ) : (
-                                            'Log Out'
-                                        )}
-                                    </button>
+                    {/* Desktop Menu */}
+                    <div className={styles.desktopMenu}>
+                        {menuItems.map((item) => (
+                            <button
+                                key={item.name}
+                                onClick={() => handleNavClick(item.path)}
+                                className={styles.menuItem}
+                            >
+                                {item.name}
+                            </button>
+                        ))}
+                        {user && (
+                            <button
+                                onClick={() => handleNavClick('/dashboard')}
+                                className={styles.menuItem}
+                            >
+                                Dashboard
+                            </button>
+                        )}
+                        {user && <NotificationBell mode="user" />}
+                        {user ? (
+                            <button
+                                onClick={handleLogout}
+                                className={styles.joinButton}
+                                disabled={isLoggingOut}
+                            >
+                                {isLoggingOut ? (
+                                    <span className={styles.logoutLoading}>
+                                        <Loader2 className={styles.logoutSpinner} size={16} />
+                                        Logging Out...
+                                    </span>
                                 ) : (
+                                    'Log Out'
+                                )}
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => handleNavClick('/signup')}
+                                className={styles.joinButton}
+                            >
+                                Join Now
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Mobile Notification Bell & Toggle */}
+                    <div className={styles.mobileRight}>
+                        {user && <NotificationBell mode="user" />}
+                        <button
+                            className={styles.mobileMenuButton}
+                            onClick={() => setIsOpen(!isOpen)}
+                            aria-label="Toggle menu"
+                        >
+                            {isOpen ? <X size={26} /> : <Menu size={26} />}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Mobile Dropdown */}
+                <AnimatePresence>
+                    {isOpen && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -8 }}
+                            transition={{ duration: 0.25 }}
+                            className={styles.mobileMenu}
+                        >
+                            <div className={styles.mobileMenuInner}>
+                                {menuItems.map((item) => (
                                     <button
-                                        onClick={() => handleNavClick('/signup')}
-                                        className={styles.mobileJoinButton}
+                                        key={item.name}
+                                        onClick={() => handleNavClick(item.path)}
+                                        className={styles.mobileMenuItem}
                                     >
-                                        Join Now
+                                        {item.name}
+                                    </button>
+                                ))}
+                                {user && (
+                                    <button
+                                        onClick={() => handleNavClick('/dashboard')}
+                                        className={styles.mobileMenuItem}
+                                    >
+                                        Dashboard
                                     </button>
                                 )}
+                                <div className={styles.mobileButtonContainer}>
+                                    {user ? (
+                                        <button
+                                            onClick={handleLogout}
+                                            className={styles.mobileJoinButton}
+                                            disabled={isLoggingOut}
+                                        >
+                                            {isLoggingOut ? (
+                                                <span className={styles.logoutLoading}>
+                                                    <Loader2 className={styles.logoutSpinner} size={16} />
+                                                    Logging Out...
+                                                </span>
+                                            ) : (
+                                                'Log Out'
+                                            )}
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleNavClick('/signup')}
+                                            className={styles.mobileJoinButton}
+                                        >
+                                            Join Now
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </nav>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </nav>
         </>
     )
 }

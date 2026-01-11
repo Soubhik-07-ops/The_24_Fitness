@@ -77,6 +77,7 @@
     right: 0;
     top: calc(100% + 12px);
     width: 360px;
+    max-width: calc(100vw - 2rem);
     max-height: 480px;
     background: #0f0f10;
     border: 1px solid #212127;
@@ -87,6 +88,23 @@
     flex-direction: column;
     backdrop-filter: blur(12px);
     animation: slideDown 0.2s ease-out;
+}
+
+@media (max-width: 640px) {
+    .dropdown {
+        width: min(360px, calc(100vw - 1.5rem));
+        max-width: min(360px, calc(100vw - 1.5rem));
+    }
+}
+
+@media (max-width: 480px) {
+    .dropdown {
+        right: 0.5rem;
+        left: auto;
+        width: calc(100vw - 1rem);
+        max-width: calc(100vw - 1rem);
+        min-width: 0;
+    }
 }
 
 @keyframes slideDown {
@@ -107,12 +125,28 @@
     justify-content: space-between;
     align-items: center;
     background: rgba(255, 255, 255, 0.02);
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 480px) {
+    .header {
+        padding: 12px 16px;
+        flex-wrap: nowrap;
+    }
 }
 
 .headerButtons {
     display: flex;
     gap: 8px;
     align-items: center;
+    flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+    .headerButtons {
+        gap: 4px;
+    }
 }
 
 .title {
@@ -123,6 +157,13 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+    .title {
+        font-size: 14px;
+    }
 }
 
 .markAllRead {
@@ -135,6 +176,14 @@
     border-radius: 6px;
     transition: all 0.2s ease;
     font-weight: 500;
+    white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+    .markAllRead {
+        font-size: 11px;
+        padding: 6px 8px;
+    }
 }
 
 .markAllRead:hover {
@@ -152,6 +201,14 @@
     border-radius: 6px;
     transition: all 0.2s ease;
     font-weight: 500;
+    white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+    .clearAll {
+        font-size: 11px;
+        padding: 6px 8px;
+    }
 }
 
 .clearAll:hover {
@@ -162,6 +219,12 @@
 .list {
     overflow-y: auto;
     max-height: 380px;
+}
+
+@media (max-width: 480px) {
+    .list {
+        max-height: calc(100vh - 200px);
+    }
 }
 
 .list::-webkit-scrollbar {
@@ -215,6 +278,12 @@
     z-index: 1;
 }
 
+@media (max-width: 480px) {
+    .item {
+        padding: 12px 16px;
+    }
+}
+
 .item.swiping {
     cursor: grabbing;
 }
@@ -255,6 +324,14 @@
     margin-bottom: 6px;
     line-height: 1.5;
     font-weight: 400;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+@media (max-width: 480px) {
+    .content {
+        font-size: 13px;
+    }
 }
 
 .item.unread .content {
