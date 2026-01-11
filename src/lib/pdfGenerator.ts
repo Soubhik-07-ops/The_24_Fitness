@@ -80,7 +80,7 @@ export const generateMembershipFormPDF = (formData: FormData, planName: string, 
     doc.setFontSize(30)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(255, 255, 255)
-    doc.text('24 FITNESS GYM', pageWidth / 2, yPos, { align: 'center' })
+    doc.text('THE 24 FITNESS GYM', pageWidth / 2, yPos, { align: 'center' })
 
     yPos = 32
     doc.setFontSize(17)

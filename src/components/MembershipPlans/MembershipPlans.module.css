@@ -169,13 +169,13 @@
 
 @media (min-width: 640px) {
     .controlsRow {
-        padding-top: 3rem;
+        padding-top: 1rem;
     }
 }
 
 @media (min-width: 1024px) {
     .controlsRow {
-        padding-top: 3.5rem;
+        padding-top: 1.5rem;
     }
 }
 
@@ -297,11 +297,13 @@
     scroll-snap-align: center;
     border-radius: 1rem;
     padding: 1.25rem;
+    scroll-snap-stop: always;
 }
 
 .plansGrid.swipeMode .planCardPopular {
-    flex: 0 0 88%;
-    transform: translateZ(0) scale(1.05);
+    /* Don't scale popular cards in swipe mode (keeps layout stable) */
+    flex: 0 0 82%;
+    transform: translateZ(0);
 }
 
 /* desktop card sizing (ensures 3 per row) */
@@ -325,7 +327,8 @@
     -webkit-backdrop-filter: blur(20px);
     color: #fff;
     border: 1px solid rgba(255, 255, 255, 0.2);
-    transform: translateZ(0) scale(1.1);
+    /* Avoid scaling on small screens (causes overlap in swipe mode) */
+    transform: translateZ(0);
     z-index: 2;
 }
 
@@ -616,3 +619,159 @@
     -ms-user-select: none;
     user-select: none;
 }
+
+/* ===== REGULAR PLANS SECTION ===== */
+.regularSection {
+    margin-top: 5rem;
+    padding-top: 4rem;
+    border-top: 2px solid rgba(249, 115, 22, 0.2);
+    position: relative;
+}
+
+@media (min-width: 640px) {
+    .regularSection {
+        margin-top: 6rem;
+        padding-top: 5rem;
+    }
+}
+
+@media (min-width: 1024px) {
+    .regularSection {
+        margin-top: 7rem;
+        padding-top: 6rem;
+    }
+}
+
+.regularSectionHeader {
+    text-align: center;
+    margin-bottom: 3rem;
+}
+
+@media (min-width: 640px) {
+    .regularSectionHeader {
+        margin-bottom: 3.5rem;
+    }
+}
+
+@media (min-width: 1024px) {
+    .regularSectionHeader {
+        margin-bottom: 4rem;
+    }
+}
+
+.regularSectionTitle {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    color: #fff;
+    font-weight: 900;
+    margin-bottom: 0.75rem;
+    line-height: 1.1;
+    background: linear-gradient(135deg, #f97316, #dc2626);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.regularSectionSubtitle {
+    font-size: clamp(0.9rem, 2vw, 1.1rem);
+    color: #d1d5db;
+    max-width: 50rem;
+    margin: 0 auto;
+    line-height: 1.6;
+}
+
+/* Regular Plans Grid Container */
+.regularPlansGrid {
+    width: 100%;
+}
+
+/* Desktop Mode: Boys left, Girls right (side by side) */
+.regularPlansGrid.regularGridMode {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    max-width: 60rem;
+    margin: 0 auto;
+    align-items: stretch;
+}
+
+@media (min-width: 1024px) {
+    .regularPlansGrid.regularGridMode {
+        gap: 2.5rem;
+    }
+}
+
+/* Mobile Mode: Swipeable */
+.regularPlansGrid.swipeMode {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    padding: 2rem 0.25rem 0.75rem;
+    scroll-snap-type: x mandatory;
+    scroll-padding: 1rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.regularPlansGrid.swipeMode::-webkit-scrollbar {
+    display: none;
+}
+
+.regularPlansGrid.swipeMode .planCard {
+    flex: 0 0 92%;
+    scroll-snap-align: center;
+    scroll-snap-stop: always;
+}
+
+@media (max-width: 480px) {
+    .regularPlansGrid.swipeMode .planCard {
+        flex: 0 0 94%;
+    }
+}
+
+/* Gender badges (Regular Plans) */
+.genderBadge {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    z-index: 21;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: #fff;
+}
+
+.boysBadge {
+    background: rgba(59, 130, 246, 0.35);
+}
+
+.girlsBadge {
+    background: rgba(236, 72, 153, 0.35);
+}
+
+/* Regular Plan Card Styling */
+.regularPlanCard {
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.1), rgba(220, 38, 38, 0.1));
+    border: 2px solid rgba(249, 115, 22, 0.3);
+    position: relative;
+}
+
+.regularPlanCard::before {
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(220, 38, 38, 0.15));
+    opacity: 1;
+}
+
+@media (hover:hover) and (pointer:fine) {
+    .regularPlanCard:hover {
+        border-color: rgba(249, 115, 22, 0.6);
+        box-shadow: 0 25px 50px rgba(249, 115, 22, 0.2), 0 0 0 1px rgba(249, 115, 22, 0.3);
+    }
+}
+
+/* NOTE: no breakpoint override for `.regularGridMode`.
+   We rely on JS `isSwipeable` to switch between grid vs swipe cleanly. */

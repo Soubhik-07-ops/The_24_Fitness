@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Calendar, FileText, Upload, Edit, Trash2, Plus, Download, X, AlertCircle, ChevronDown, Image as ImageIcon, Clock } from 'lucide-react';
+import { Calendar, FileText, Upload, Edit, Trash2, Plus, Download, X, AlertCircle, ChevronDown, Image as ImageIcon, Clock, Sparkles } from 'lucide-react';
 import Toast from '@/components/Toast/Toast';
 import { useToast } from '@/hooks/useToast';
 import styles from './weekly-charts.module.css';
@@ -17,6 +17,7 @@ interface WeeklyChart {
     content: string | null;
     file_url: string | null;
     created_at: string;
+    created_by: string | null;
 }
 
 interface Membership {
@@ -27,11 +28,21 @@ interface Membership {
     plan_name: string;
     status: string;
     start_date?: string | null;
+    trainer_period_end?: string | null;
+    trainer_id?: string | null;
+    trainer_assigned?: boolean;
+    has_trainer_addon?: boolean;
+    trainer_period_expired?: boolean;
+    admin_can_upload?: boolean;
+    trainer_can_upload?: boolean;
+    chart_responsibility?: 'admin' | 'trainer' | 'none';
+    chart_reason?: string;
     charts: WeeklyChart[];
 }
 
 export default function AdminWeeklyChartsPage() {
-    const [memberships, setMemberships] = useState<Membership[]>([]);
+    const [directAdminMemberships, setDirectAdminMemberships] = useState<Membership[]>([]);
+    const [trainerAssignedMemberships, setTrainerAssignedMemberships] = useState<Membership[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedMembership, setSelectedMembership] = useState<Membership | null>(null);
     const [showChartModal, setShowChartModal] = useState(false);
@@ -49,7 +60,12 @@ export default function AdminWeeklyChartsPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [error, setError] = useState<string | null>(null);
     const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
-    const [currentPage, setCurrentPage] = useState(1);
+    const [showAIModal, setShowAIModal] = useState(false);
+    const [generatingAI, setGeneratingAI] = useState(false);
+    const [aiForm, setAiForm] = useState({
+        week_number: '',
+        chart_type: 'workout'
+    });
     const itemsPerPage = 10;
     const { toast, toastType, showToast, hideToast } = useToast();
 
@@ -72,7 +88,9 @@ export default function AdminWeeklyChartsPage() {
                 throw new Error(data.error || 'Failed to fetch weekly charts');
             }
 
-            setMemberships(data.memberships || []);
+            // API now returns two separate arrays: directAdminMemberships and trainerAssignedMemberships
+            setDirectAdminMemberships(data.directAdminMemberships || []);
+            setTrainerAssignedMemberships(data.trainerAssignedMemberships || []);
         } catch (error: any) {
             console.error('Error fetching weekly charts:', error);
             setError(`Failed to load weekly charts: ${error.message}`);
@@ -261,8 +279,58 @@ export default function AdminWeeklyChartsPage() {
         }
     };
 
-    // Group memberships by user_id
-    const userGroups = useMemo(() => {
+    const handleGenerateAIChart = (membership: Membership) => {
+        setSelectedMembership(membership);
+        // Calculate suggested week number (current week or next week)
+        const suggestedWeek = membership.start_date ? calculateCurrentWeek(membership.start_date) : 1;
+        setAiForm({
+            week_number: suggestedWeek ? suggestedWeek.toString() : '1',
+            chart_type: 'workout'
+        });
+        setShowAIModal(true);
+    };
+
+    const handleSubmitAIGeneration = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (!selectedMembership || !aiForm.week_number) {
+            showToast('Please fill in all required fields', 'error');
+            return;
+        }
+
+        try {
+            setGeneratingAI(true);
+            const response = await fetch('/api/admin/weekly-charts/generate-ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    membership_id: selectedMembership.membership_id,
+                    week_number: parseInt(aiForm.week_number),
+                    chart_type: aiForm.chart_type
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to generate chart using AI');
+            }
+
+            showToast('Chart generated successfully using AI!', 'success');
+            setShowAIModal(false);
+            setAiForm({ week_number: '', chart_type: 'workout' });
+            fetchMembershipsAndCharts();
+        } catch (error: any) {
+            console.error('Error generating AI chart:', error);
+            showToast(`Failed to generate chart: ${error.message}`, 'error');
+        } finally {
+            setGeneratingAI(false);
+        }
+    };
+
+    // Helper function to group memberships by user_id
+    const groupMembershipsByUser = (memberships: Membership[]) => {
         const grouped = new Map<string, {
             user_id: string;
             user_name: string;
@@ -286,13 +354,25 @@ export default function AdminWeeklyChartsPage() {
         return Array.from(grouped.values()).sort((a, b) =>
             b.memberships[0].membership_id - a.memberships[0].membership_id
         );
-    }, [memberships]);
+    };
 
-    // Pagination
-    const totalPages = Math.ceil(userGroups.length / itemsPerPage);
-    const paginatedUserGroups = userGroups.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
+    // Group both sections
+    const directAdminUserGroups = useMemo(() => groupMembershipsByUser(directAdminMemberships), [directAdminMemberships]);
+    const trainerAssignedUserGroups = useMemo(() => groupMembershipsByUser(trainerAssignedMemberships), [trainerAssignedMemberships]);
+
+    // Pagination for both sections
+    const directAdminTotalPages = Math.ceil(directAdminUserGroups.length / itemsPerPage);
+    const trainerAssignedTotalPages = Math.ceil(trainerAssignedUserGroups.length / itemsPerPage);
+    const [directAdminPage, setDirectAdminPage] = useState(1);
+    const [trainerAssignedPage, setTrainerAssignedPage] = useState(1);
+    
+    const paginatedDirectAdminGroups = directAdminUserGroups.slice(
+        (directAdminPage - 1) * itemsPerPage,
+        directAdminPage * itemsPerPage
+    );
+    const paginatedTrainerAssignedGroups = trainerAssignedUserGroups.slice(
+        (trainerAssignedPage - 1) * itemsPerPage,
+        trainerAssignedPage * itemsPerPage
     );
 
     const toggleUserExpanded = (userId: string) => {
@@ -415,7 +495,7 @@ export default function AdminWeeklyChartsPage() {
             <div className={styles.header}>
                 <h1 className={styles.title}>Weekly Charts Management</h1>
                 <p className={styles.subtitle}>
-                    Create and manage workout and diet charts for members without personal trainers
+                    View and manage all workout and diet charts. Upload charts directly or monitor trainer-assigned charts.
                 </p>
             </div>
 
@@ -427,18 +507,23 @@ export default function AdminWeeklyChartsPage() {
                 </div>
             )}
 
-            {userGroups.length === 0 ? (
-                <div className={cardStyles.emptyState}>
-                    <FileText className={cardStyles.emptyStateIcon} />
-                    <div className={cardStyles.emptyStateTitle}>No memberships found</div>
-                    <div className={cardStyles.emptyStateText}>
-                        Weekly charts will appear here for members without personal trainers.
+            {/* Render User Groups Helper Function */}
+            {(() => {
+                const renderUserGroups = (userGroups: typeof directAdminUserGroups, adminCanUpload: boolean, sectionTitle: string, sectionDescription: string) => {
+                    if (userGroups.length === 0) return null;
+
+                    return (
+                        <div style={{ marginBottom: '3rem' }}>
+                            <div style={{ marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '2px solid #e5e7eb' }}>
+                                <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '0.5rem', color: '#111827' }}>
+                                    {sectionTitle}
+                                </h2>
+                                <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>
+                                    {sectionDescription}
+                                </p>
                     </div>
-                </div>
-            ) : (
-                <>
                     <div className={styles.cardsContainer}>
-                        {paginatedUserGroups.map((userGroup) => {
+                                {userGroups.map((userGroup) => {
                             const isExpanded = expandedUsers.has(userGroup.user_id);
                             const totalCharts = userGroup.memberships.reduce((sum, m) => sum + m.charts.length, 0);
                             const workoutCharts = userGroup.memberships.reduce((sum, m) => sum + m.charts.filter(c => c.chart_type === 'workout').length, 0);
@@ -491,10 +576,10 @@ export default function AdminWeeklyChartsPage() {
                                     <div className={`${cardStyles.userCardContent} ${isExpanded ? cardStyles.userCardContentExpanded : ''}`}>
                                         <div className={cardStyles.itemsList}>
                                             {userGroup.memberships.map((membership) => {
-                                                const nextWeekInfo = getNextWeekNeedingChart(membership);
+                                                        const nextWeekInfo = adminCanUpload ? getNextWeekNeedingChart(membership) : null;
                                                 return (
                                                     <div key={membership.membership_id} style={{ marginBottom: '1.5rem' }}>
-                                                        {/* Next Week Chart Reminder Card */}
+                                                                {/* Next Week Chart Reminder Card - Only for admin uploadable */}
                                                         {nextWeekInfo && (
                                                             <div className={styles.reminderCard} style={{ marginBottom: '1rem' }}>
                                                                 <div className={styles.reminderIcon}>
@@ -516,6 +601,24 @@ export default function AdminWeeklyChartsPage() {
                                                                         )}
                                                                     </div>
                                                                 </div>
+                                                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleGenerateAIChart(membership);
+                                                                            }}
+                                                                            className={`${cardStyles.actionButton}`}
+                                                                            style={{ 
+                                                                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                                                color: 'white',
+                                                                                border: 'none',
+                                                                                whiteSpace: 'nowrap'
+                                                                            }}
+                                                                            title="Generate chart using AI based on user's form data"
+                                                                        >
+                                                                            <Sparkles size={16} />
+                                                                            AI Generate
+                                                                        </button>
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
@@ -527,6 +630,7 @@ export default function AdminWeeklyChartsPage() {
                                                                     <Plus size={16} />
                                                                     Add Now
                                                                 </button>
+                                                                    </div>
                                                             </div>
                                                         )}
 
@@ -535,7 +639,38 @@ export default function AdminWeeklyChartsPage() {
                                                                 <div>
                                                                     <div className={cardStyles.itemTitle}>
                                                                         {membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)} Plan
+                                                                                {membership.chart_responsibility === 'trainer' && (
+                                                                                    <span style={{
+                                                                                        marginLeft: '0.5rem',
+                                                                                        padding: '0.125rem 0.5rem',
+                                                                                        borderRadius: '0.375rem',
+                                                                                        background: '#dbeafe',
+                                                                                        color: '#1e40af',
+                                                                                        fontSize: '0.75rem',
+                                                                                        fontWeight: '600'
+                                                                                    }}>
+                                                                                        Trainer Uploads
+                                                                                    </span>
+                                                                                )}
+                                                                                {membership.chart_responsibility === 'admin' && membership.has_trainer_addon && membership.trainer_period_expired && (
+                                                                                    <span style={{
+                                                                                        marginLeft: '0.5rem',
+                                                                                        padding: '0.125rem 0.5rem',
+                                                                                        borderRadius: '0.375rem',
+                                                                                        background: '#fef3c7',
+                                                                                        color: '#92400e',
+                                                                                        fontSize: '0.75rem',
+                                                                                        fontWeight: '600'
+                                                                                    }}>
+                                                                                        Trainer Expired - Admin Uploads
+                                                                                    </span>
+                                                                                )}
                                                                     </div>
+                                                                            {membership.chart_reason && (
+                                                                                <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                                    {membership.chart_reason}
+                                                                                </div>
+                                                                            )}
                                                                     <div className={cardStyles.itemMeta}>
                                                                         <span className={cardStyles.itemBadge} style={{
                                                                             background: '#e0e7ff',
@@ -545,24 +680,48 @@ export default function AdminWeeklyChartsPage() {
                                                                         </span>
                                                                     </div>
                                                                 </div>
+                                                                        {adminCanUpload && (
+                                                                    <div style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto' }}>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleGenerateAIChart(membership);
+                                                                            }}
+                                                                            className={`${cardStyles.actionButton}`}
+                                                                            style={{ 
+                                                                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                                                color: 'white',
+                                                                                border: 'none'
+                                                                            }}
+                                                                            title="Generate chart using AI based on user's form data"
+                                                                        >
+                                                                            <Sparkles size={16} />
+                                                                            AI Generate
+                                                                        </button>
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         handleCreateChart(membership);
                                                                     }}
                                                                     className={`${cardStyles.actionButton} ${cardStyles.actionButtonPrimary}`}
-                                                                    style={{ marginLeft: 'auto' }}
                                                                 >
                                                                     <Plus size={16} />
                                                                     Add Chart
                                                                 </button>
+                                                                    </div>
+                                                                        )}
+                                                                        {!adminCanUpload && membership.chart_responsibility === 'trainer' && (
+                                                                            <div style={{ marginLeft: 'auto', padding: '0.5rem 1rem', fontSize: '0.875rem', color: '#1e40af', fontWeight: '500' }}>
+                                                                                Trainer uploads charts
+                                                                            </div>
+                                                                        )}
                                                             </div>
 
                                                             {membership.charts.length === 0 ? (
                                                                 <div className={cardStyles.emptyState} style={{ padding: '1.5rem 1rem', marginTop: '1rem' }}>
                                                                     <FileText className={cardStyles.emptyStateIcon} style={{ width: '24px', height: '24px' }} />
                                                                     <div className={cardStyles.emptyStateText} style={{ fontSize: '0.875rem' }}>
-                                                                        No charts for this plan yet.
+                                                                                {adminCanUpload ? 'No charts for this plan yet.' : 'No charts uploaded by trainer yet.'}
                                                                     </div>
                                                                 </div>
                                                             ) : (
@@ -583,6 +742,12 @@ export default function AdminWeeklyChartsPage() {
                                                                                         </span>
                                                                                         <span>•</span>
                                                                                         <span>{new Date(chart.created_at).toLocaleDateString()}</span>
+                                                                                                {chart.created_by && (
+                                                                                                    <>
+                                                                                                        <span>•</span>
+                                                                                                        <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>Uploaded by Trainer</span>
+                                                                                                    </>
+                                                                                                )}
                                                                                     </div>
                                                                                 </div>
                                                                             </div>
@@ -623,6 +788,8 @@ export default function AdminWeeklyChartsPage() {
                                                                                         Download File
                                                                                     </a>
                                                                                 )}
+                                                                                        {adminCanUpload && (
+                                                                                            <>
                                                                                 <button
                                                                                     onClick={(e) => {
                                                                                         e.stopPropagation();
@@ -643,6 +810,8 @@ export default function AdminWeeklyChartsPage() {
                                                                                     <Trash2 size={16} />
                                                                                     Delete
                                                                                 </button>
+                                                                                            </>
+                                                                                        )}
                                                                             </div>
                                                                         </div>
                                                                     ))}
@@ -658,40 +827,98 @@ export default function AdminWeeklyChartsPage() {
                             );
                         })}
                     </div>
+                        </div>
+                    );
+                };
 
-                    {/* Pagination */}
-                    {totalPages > 1 && (
+                const hasAnyMemberships = directAdminUserGroups.length > 0 || trainerAssignedUserGroups.length > 0;
+
+                return hasAnyMemberships ? (
+                    <>
+                        {/* Section 1: Direct Admin Charts */}
+                        {renderUserGroups(
+                            paginatedDirectAdminGroups,
+                            true,
+                            'Direct Admin Charts',
+                            'Upload and manage charts directly for members without trainers or expired trainer periods.'
+                        )}
+
+                        {/* Section 2: Trainer-Assigned Charts */}
+                        {renderUserGroups(
+                            paginatedTrainerAssignedGroups,
+                            true, // Admin can upload here too as backup if trainer forgets
+                            'Trainer-Assigned Charts',
+                            'View all charts for members with active trainer assignments. Charts are typically uploaded by trainers, but you can upload here as backup if needed.'
+                        )}
+
+                        {/* Pagination for Direct Admin Section */}
+                        {directAdminTotalPages > 1 && (
+                            <div className={cardStyles.pagination} style={{ marginBottom: '2rem' }}>
+                                <button
+                                    className={cardStyles.paginationButton}
+                                    onClick={() => setDirectAdminPage(prev => Math.max(1, prev - 1))}
+                                    disabled={directAdminPage === 1}
+                                >
+                                    ‹
+                                </button>
+                                {Array.from({ length: directAdminTotalPages }, (_, i) => i + 1).map(page => (
+                                    <button
+                                        key={page}
+                                        className={`${cardStyles.paginationButton} ${directAdminPage === page ? cardStyles.paginationButtonActive : ''}`}
+                                        onClick={() => setDirectAdminPage(page)}
+                                    >
+                                        {page}
+                                    </button>
+                                ))}
+                                <button
+                                    className={cardStyles.paginationButton}
+                                    onClick={() => setDirectAdminPage(prev => Math.min(directAdminTotalPages, prev + 1))}
+                                    disabled={directAdminPage === directAdminTotalPages}
+                                >
+                                    ›
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Pagination for Trainer-Assigned Section */}
+                        {trainerAssignedTotalPages > 1 && (
                         <div className={cardStyles.pagination}>
                             <button
                                 className={cardStyles.paginationButton}
-                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                disabled={currentPage === 1}
+                                    onClick={() => setTrainerAssignedPage(prev => Math.max(1, prev - 1))}
+                                    disabled={trainerAssignedPage === 1}
                             >
                                 ‹
                             </button>
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                {Array.from({ length: trainerAssignedTotalPages }, (_, i) => i + 1).map(page => (
                                 <button
                                     key={page}
-                                    className={`${cardStyles.paginationButton} ${currentPage === page ? cardStyles.paginationButtonActive : ''}`}
-                                    onClick={() => setCurrentPage(page)}
+                                        className={`${cardStyles.paginationButton} ${trainerAssignedPage === page ? cardStyles.paginationButtonActive : ''}`}
+                                        onClick={() => setTrainerAssignedPage(page)}
                                 >
                                     {page}
                                 </button>
                             ))}
                             <button
                                 className={cardStyles.paginationButton}
-                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                disabled={currentPage === totalPages}
+                                    onClick={() => setTrainerAssignedPage(prev => Math.min(trainerAssignedTotalPages, prev + 1))}
+                                    disabled={trainerAssignedPage === trainerAssignedTotalPages}
                             >
                                 ›
                             </button>
-                            <div className={cardStyles.paginationInfo}>
-                                Page {currentPage} of {totalPages} ({userGroups.length} users)
-                            </div>
                         </div>
                     )}
                 </>
-            )}
+                ) : (
+                    <div className={cardStyles.emptyState}>
+                        <FileText className={cardStyles.emptyStateIcon} />
+                        <div className={cardStyles.emptyStateTitle}>No memberships found</div>
+                        <div className={cardStyles.emptyStateText}>
+                            Weekly charts will appear here once memberships are active and eligible for charts.
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Chart Modal */}
             {showChartModal && selectedMembership && (
@@ -816,6 +1043,128 @@ export default function AdminWeeklyChartsPage() {
                                     disabled={uploadingFile}
                                 >
                                     {uploadingFile ? 'Uploading...' : (editingChart ? 'Update Chart' : 'Create Chart')}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Generation Modal */}
+            {showAIModal && selectedMembership && (
+                <div className={styles.modalOverlay} onClick={() => setShowAIModal(false)}>
+                    <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+                        <div className={styles.modalHeader}>
+                            <h2>Generate Chart Using AI</h2>
+                            <button
+                                className={styles.modalClose}
+                                onClick={() => setShowAIModal(false)}
+                                disabled={generatingAI}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmitAIGeneration} className={styles.modalBody}>
+                            <div style={{ 
+                                padding: '1rem', 
+                                background: '#f0f9ff', 
+                                borderRadius: '0.5rem', 
+                                marginBottom: '1.5rem',
+                                border: '1px solid #bae6fd'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                    <Sparkles size={18} style={{ color: '#667eea' }} />
+                                    <strong style={{ color: '#1e40af' }}>AI-Powered Chart Generation</strong>
+                                </div>
+                                <p style={{ fontSize: '0.875rem', color: '#1e40af', margin: 0 }}>
+                                    The AI will analyze the user's membership form data (health goals, medical conditions, 
+                                    dietary preferences, activity level, etc.) to create a personalized {aiForm.chart_type} chart 
+                                    for Week {aiForm.week_number || '?'}.
+                                </p>
+                            </div>
+
+                            <div className={styles.formGroup}>
+                                <label htmlFor="ai_week_number">Week Number *</label>
+                                <input
+                                    type="number"
+                                    id="ai_week_number"
+                                    value={aiForm.week_number}
+                                    onChange={(e) => setAiForm(prev => ({ ...prev, week_number: e.target.value }))}
+                                    min="1"
+                                    required
+                                    disabled={generatingAI}
+                                />
+                                <small className={styles.helpText}>
+                                    Suggested: Week {selectedMembership.start_date ? calculateCurrentWeek(selectedMembership.start_date) || 1 : 1}
+                                </small>
+                            </div>
+
+                            <div className={styles.formGroup}>
+                                <label htmlFor="ai_chart_type">Chart Type *</label>
+                                <select
+                                    id="ai_chart_type"
+                                    value={aiForm.chart_type}
+                                    onChange={(e) => setAiForm(prev => ({ ...prev, chart_type: e.target.value }))}
+                                    required
+                                    disabled={generatingAI}
+                                >
+                                    <option value="workout">Workout Plan</option>
+                                    <option value="diet">Diet Plan</option>
+                                </select>
+                                <small className={styles.helpText}>
+                                    {selectedMembership.plan_name.toLowerCase() === 'basic' && aiForm.chart_type === 'diet' && 
+                                        'Note: Basic plans typically only include workout charts.'}
+                                </small>
+                            </div>
+
+                            <div style={{ 
+                                padding: '1rem', 
+                                background: '#fef3c7', 
+                                borderRadius: '0.5rem', 
+                                marginTop: '1rem',
+                                border: '1px solid #fcd34d'
+                            }}>
+                                <div style={{ fontSize: '0.875rem', color: '#92400e' }}>
+                                    <strong>⚠️ Important:</strong>
+                                    <ul style={{ marginTop: '0.5rem', paddingLeft: '1.5rem' }}>
+                                        <li>Ensure the user has submitted their membership application form with complete information</li>
+                                        <li>The AI will use all available form data to personalize the chart</li>
+                                        <li>Review the generated chart before it's sent to the user</li>
+                                        <li>Generation may take 10-30 seconds</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div className={styles.modalFooter}>
+                                <button
+                                    type="button"
+                                    className={styles.cancelButton}
+                                    onClick={() => setShowAIModal(false)}
+                                    disabled={generatingAI}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className={styles.submitButton}
+                                    disabled={generatingAI}
+                                    style={{
+                                        background: generatingAI ? '#9ca3af' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        border: 'none'
+                                    }}
+                                >
+                                    {generatingAI ? (
+                                        <>
+                                            <div className={styles.spinnerSmall} style={{ marginRight: '0.5rem' }}></div>
+                                            Generating...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles size={18} style={{ marginRight: '0.5rem' }} />
+                                            Generate Chart
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </form>

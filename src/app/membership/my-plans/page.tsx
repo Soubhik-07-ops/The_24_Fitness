@@ -32,7 +32,6 @@ interface Membership {
     created_at: string
     membership_start_date?: string | null
     addons?: MembershipAddon[]
-    has_renewals?: boolean // Flag to indicate if membership has renewals
 }
 
 export default function MyMembershipsPage() {
@@ -77,24 +76,9 @@ export default function MyMembershipsPage() {
                             console.error('Error fetching addons for membership', membership.id, ':', addonsError)
                         }
 
-                        // Fetch payments to determine if membership was renewed
-                        const { data: paymentsData, error: paymentsError } = await supabase
-                            .from('membership_payments')
-                            .select('id, status')
-                            .eq('membership_id', membership.id)
-
-                        if (paymentsError) {
-                            console.error('Error fetching payments for membership', membership.id, ':', paymentsError)
-                        }
-
-                        // Check if membership has renewals (multiple verified payments)
-                        const verifiedPayments = (paymentsData || []).filter((p: any) => p.status === 'verified')
-                        const hasRenewals = verifiedPayments.length > 1
-
                         return {
                             ...membership,
-                            addons: addonsData || [],
-                            has_renewals: hasRenewals // Add flag to indicate if membership has renewals
+                            addons: addonsData || []
                         }
                     })
                 )
@@ -255,16 +239,6 @@ export default function MyMembershipsPage() {
                                                 <h3 className={styles.planName} style={{ margin: 0 }}>
                                                     {membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)} Plan
                                                 </h3>
-                                                <span style={{
-                                                    padding: '0.125rem 0.5rem',
-                                                    borderRadius: '0.375rem',
-                                                    background: membership.has_renewals ? '#f59e0b' : '#3b82f6',
-                                                    color: 'white',
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: '600'
-                                                }}>
-                                                    {membership.has_renewals ? '🔄 Renewed' : '🎯 Initial'}
-                                                </span>
                                             </div>
                                             <span className={styles.planType}>
                                                 {membership.addons?.some((a: any) => a.addon_type === 'in_gym')
@@ -326,8 +300,11 @@ export default function MyMembershipsPage() {
                                                 ₹{(() => {
                                                     let total = membership.price
                                                     // Add in-gym admission fee if plan_type is in_gym and no active in_gym addon exists
+                                                    // EXCEPT for Regular Plans (plan_name contains "regular") - they already include admission in base price
                                                     const activeAddons = membership.addons?.filter((a: any) => a.status === 'active') || []
-                                                    if (membership.plan_type === 'in_gym' && !activeAddons.some((a: any) => a.addon_type === 'in_gym')) {
+                                                    const planName = String(membership.plan_name || '').toLowerCase()
+                                                    const isRegularPlan = planName.includes('regular')
+                                                    if (membership.plan_type === 'in_gym' && !activeAddons.some((a: any) => a.addon_type === 'in_gym') && !isRegularPlan) {
                                                         total += inGymAdmissionFee
                                                     }
                                                     // Add only active addon prices

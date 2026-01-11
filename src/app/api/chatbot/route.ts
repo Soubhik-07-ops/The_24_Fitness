@@ -61,7 +61,6 @@ const KNOWLEDGE_BASE = {
         expired: "If your membership has expired, you can renew it from:\nDashboard → My Plans (/membership/my-plans)\n\nOr use the Renew Plan option from your dashboard. Renewal follows the same process as a new membership.",
         renewal: "To renew your membership:\n1. Go to Dashboard (/dashboard)\n2. Click on 'My Plans' or 'Renew Plan'\n3. Select your plan and duration\n4. Complete payment process\n5. Wait for approval\n\nYour new membership will start after the current one expires or immediately after approval.",
         myPlans: "View all your memberships at:\n/membership/my-plans\n\nHere you can see:\n- All your membership history\n- Current and past memberships\n- Membership status\n- Renewal options",
-        invoice: "Invoices are automatically generated after your membership is approved. You can find them in:\nDashboard → Invoices section\n\nYou can download invoices as PDF files. If you don't see an invoice, it means your membership is still pending approval.",
         status: "Check your membership status in:\nDashboard (/dashboard)\n\nStatus types:\n✅ Active - Membership is active and running\n⏳ Pending - Waiting for admin approval\n❌ Expired - Membership has ended\n🚫 Rejected - Payment was rejected",
     },
     payment: {
@@ -83,8 +82,8 @@ const KNOWLEDGE_BASE = {
         missing: "If you don't see weekly charts:\n1. Check if your membership is active\n2. Verify trainer is assigned\n3. Charts are uploaded weekly by trainer\n4. Basic plan only gets workout charts\n5. Premium/Elite get both workout and diet charts\n\nIf charts are missing, contact your trainer or use Contact page.",
     },
     dashboard: {
-        overview: "Your Dashboard (/dashboard) shows:\n\n📊 Membership Overview\n- Current plan and status\n- Start/end dates\n- Trainer information\n\n📈 Weekly Charts\n- All your fitness charts\n- Download options\n\n💰 Invoices\n- All membership invoices\n- Download as PDF\n\n👤 Profile\n- Quick access to edit profile\n\n💬 Messages\n- Link to message trainer",
-        features: "Dashboard features:\n- Real-time membership status\n- Weekly charts viewing and download\n- Invoice management\n- Trainer information and messaging\n- Profile quick access\n- Membership history\n- Payment summary",
+        overview: "Your Dashboard (/dashboard) shows:\n\n📊 Membership Overview\n- Current plan and status\n- Start/end dates\n- Trainer information\n\n📈 Weekly Charts\n- All your fitness charts\n- Download options\n\n👤 Profile\n- Quick access to edit profile\n\n💬 Messages\n- Link to message trainer",
+        features: "Dashboard features:\n- Real-time membership status\n- Weekly charts viewing and download\n- Trainer information and messaging\n- Profile quick access\n- Membership history\n- Payment summary",
     },
     profile: {
         management: "Manage your profile at:\n/profile\n\nYou can:\n- View your profile\n- Edit personal information\n- Update full name\n- Change phone number\n- Update address\n- Change avatar/profile picture\n- Update date of birth\n- Change gender\n\nAll changes are saved automatically.",
@@ -190,10 +189,6 @@ function generateResponse(message: string, conversationHistory: Array<{ role: st
     if (lowerMessage.includes('my plans') || lowerMessage.includes('all memberships') || lowerMessage.includes('membership history') ||
         lowerMessage.includes('my membership') || lowerMessage === 'myplans' || lowerMessage === 'my-plans') {
         return KNOWLEDGE_BASE.membership.myPlans;
-    }
-    if (lowerMessage.includes('invoice') || lowerMessage.includes('receipt') || lowerMessage.includes('bill') ||
-        lowerMessage === 'invoice' || lowerMessage === 'receipt' || lowerMessage === 'bill' || lowerMessage === 'invoices') {
-        return KNOWLEDGE_BASE.membership.invoice;
     }
     if (lowerMessage.includes('membership status') || (lowerMessage.includes('status') && lowerMessage.includes('membership')) ||
         lowerMessage === 'status' || lowerMessage === 'membership-status') {
@@ -463,7 +458,7 @@ function generateResponse(message: string, conversationHistory: Array<{ role: st
     }
 
     // Default helpful response with more options
-    return "I can help you with:\n\n💪 Membership Plans\n- View plans (Basic, Premium, Elite)\n- Purchase membership\n- Check status\n- Renew membership\n- View all plans\n- Pricing information\n\n💳 Payment\n- QR code payment\n- Upload screenshot\n- Payment verification\n- Transaction ID\n\n📄 Invoices\n- Download invoices\n- View invoice history\n\n👨‍🏫 Trainers\n- Trainer assignment\n- Message trainer\n- Trainer addon\n- Renew trainer\n\n📊 Weekly Charts\n- View charts\n- Download charts\n- Workout & diet plans\n\n📅 Classes\n- View class details\n- Class schedules\n\n🎁 Offers\n- Current promotions\n- Special deals\n\n👤 Profile\n- Edit profile\n- Update information\n- Change password\n\n🔐 Password\n- Forgot password? Contact admin\n- Change password? Go to Profile\n- Password requirements\n\n📞 Contact\n- Support & help\n- Gym information\n- Address & phone\n\n🏠 Dashboard\n- All features overview\n\n💡 Try asking:\n- \"invoice\" (single word works!)\n- \"payment\"\n- \"trainer\"\n- \"dashboard\"\n- \"password\"\n- \"plans\"\n\nWhat would you like to know more about? Ask me anything about the website!";
+    return "I can help you with:\n\n💪 Membership Plans\n- View plans (Basic, Premium, Elite)\n- Purchase membership\n- Check status\n- Renew membership\n- View all plans\n- Pricing information\n\n💳 Payment\n- QR code payment\n- Upload screenshot\n- Payment verification\n- Transaction ID\n\n👨‍🏫 Trainers\n- Trainer assignment\n- Message trainer\n- Trainer addon\n- Renew trainer\n\n📊 Weekly Charts\n- View charts\n- Download charts\n- Workout & diet plans\n\n📅 Classes\n- View class details\n- Class schedules\n\n🎁 Offers\n- Current promotions\n- Special deals\n\n👤 Profile\n- Edit profile\n- Update information\n- Change password\n\n🔐 Password\n- Forgot password? Contact admin\n- Change password? Go to Profile\n- Password requirements\n\n📞 Contact\n- Support & help\n- Gym information\n- Address & phone\n\n🏠 Dashboard\n- All features overview\n\n💡 Try asking:\n- \"payment\"\n- \"trainer\"\n- \"dashboard\"\n- \"password\"\n- \"plans\"\n\nWhat would you like to know more about? Ask me anything about the website!";
 }
 
 export async function POST(request: NextRequest) {

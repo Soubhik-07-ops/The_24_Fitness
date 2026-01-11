@@ -44,35 +44,6 @@ export async function DELETE(
 
         const wasActive = membership.status === 'active';
 
-        // Fetch all invoices for this membership to delete PDF files from storage
-        const { data: invoices, error: invoicesError } = await supabaseAdmin
-            .from('invoices')
-            .select('pdf_path')
-            .eq('membership_id', membershipId);
-
-        // Delete invoice PDF files from storage
-        if (invoices && invoices.length > 0) {
-            const pdfPaths = invoices
-                .map(inv => inv.pdf_path)
-                .filter((path): path is string => path !== null && path !== undefined);
-
-            if (pdfPaths.length > 0) {
-                try {
-                    const { error: storageError } = await supabaseAdmin.storage
-                        .from('invoices')
-                        .remove(pdfPaths);
-
-                    if (storageError) {
-                        console.warn('Error deleting invoice PDFs from storage:', storageError);
-                        // Continue with deletion even if storage deletion fails
-                    }
-                } catch (storageErr) {
-                    console.warn('Error deleting invoice PDFs from storage:', storageErr);
-                    // Continue with deletion even if storage deletion fails
-                }
-            }
-        }
-
         // Delete associated addons first (foreign key constraint)
         await supabaseAdmin
             .from('membership_addons')
@@ -85,7 +56,7 @@ export async function DELETE(
             .delete()
             .eq('membership_id', membershipId);
 
-        // Delete the membership (this will CASCADE delete invoices from database)
+        // Delete the membership
         const { error: deleteError } = await supabaseAdmin
             .from('memberships')
             .delete()

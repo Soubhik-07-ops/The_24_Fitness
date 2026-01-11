@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ArrowLeft } from 'lucide-react';
 import { validatePassword, getPasswordRequirements } from '@/lib/passwordValidation';
 import styles from './AuthForm.module.css';
 
@@ -17,6 +17,8 @@ export default function AuthForm() {
     const [message, setMessage] = useState('');
     const [loading, setLoading] = useState(false);
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const redirectUrl = searchParams.get('redirect') || '/';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -157,10 +159,10 @@ export default function AuthForm() {
 
                 setMessage('Logged in successfully! Redirecting...');
 
-                // Smooth redirect with loading state
+                // Smooth redirect with loading state - use redirect URL if available
                 setTimeout(() => {
-                    router.push('/');
-                    window.location.href = '/';
+                    router.push(redirectUrl);
+                    window.location.href = redirectUrl;
                 }, 1500);
             }
         } catch (error: any) {
@@ -184,6 +186,16 @@ export default function AuthForm() {
                 </div>
             )}
             <div className={styles.authCard}>
+                {redirectUrl !== '/' && (
+                    <button
+                        onClick={() => router.push('/membership')}
+                        className={styles.backButton}
+                        type="button"
+                    >
+                        <ArrowLeft size={18} />
+                        Back to Plans
+                    </button>
+                )}
                 <h2 className={styles.title}>
                     {isSigningUp ? 'Create Your Account' : 'Welcome Back'}
                 </h2>

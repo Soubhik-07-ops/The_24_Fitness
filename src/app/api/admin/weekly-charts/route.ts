@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { validateAdminSession } from '@/lib/adminAuth';
+import { getChartResponsibility, needsWorkoutCharts, needsDietCharts } from '@/lib/chartResponsibility';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -23,17 +24,26 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Invalid or expired admin session' }, { status: 401 });
         }
 
-        // Get all active memberships
+        // Get all active memberships with trainer period info
         const { data: memberships, error: membershipsError } = await supabaseAdmin
             .from('memberships')
             .select(`
                 id,
                 user_id,
                 plan_name,
+                plan_type,
+                plan_mode,
                 status,
+                trainer_period_end,
+                trainer_id,
+                trainer_assigned,
+                membership_start_date,
+                membership_end_date,
+                end_date,
                 membership_addons!left (
                     id,
-                    addon_type
+                    addon_type,
+                    status
                 )
             `)
             .eq('status', 'active');
@@ -42,22 +52,41 @@ export async function GET(request: NextRequest) {
             throw membershipsError;
         }
 
-        // Filter memberships without personal trainer addon
-        const membershipsWithoutTrainer = (memberships || []).filter((m: any) => {
+        const currentDate = new Date();
+        currentDate.setHours(0, 0, 0, 0);
+
+        // Filter ALL chart-eligible memberships (not just admin-uploadable)
+        // - Regular plans: ONLY if they have trainer addon
+        // - Other plans: Always eligible
+        const allChartEligibleMemberships = (memberships || []).filter((m: any) => {
+            const planName = String(m.plan_name || '').toLowerCase();
+            const isRegularPlan = planName.includes('regular');
+            
             const hasPersonalTrainer = (m.membership_addons || []).some(
-                (a: any) => a.addon_type === 'personal_trainer'
+                (a: any) => a.addon_type === 'personal_trainer' && (a.status === 'active' || a.status === 'pending')
             );
-            return !hasPersonalTrainer;
+            
+            // Regular plans: ONLY allow if they have trainer addon
+            if (isRegularPlan) {
+                return hasPersonalTrainer; // Regular without trainer = no charts
+            }
+            
+            // Other plans: always eligible
+            return true;
         });
 
-        const membershipIds = membershipsWithoutTrainer.map((m: any) => m.id);
+        const membershipIds = allChartEligibleMemberships.map((m: any) => m.id);
 
         if (membershipIds.length === 0) {
-            return NextResponse.json({ memberships: [], charts: [] });
+            return NextResponse.json({ 
+                directAdminMemberships: [],
+                trainerAssignedMemberships: [],
+                charts: []
+            });
         }
 
         // Get user IDs
-        const userIds = [...new Set(membershipsWithoutTrainer.map((m: any) => m.user_id))];
+        const userIds = [...new Set(allChartEligibleMemberships.map((m: any) => m.user_id))];
 
         // Fetch profiles separately
         const { data: profiles, error: profilesError } = await supabaseAdmin
@@ -69,12 +98,11 @@ export async function GET(request: NextRequest) {
             console.error('Error fetching profiles:', profilesError);
         }
 
-        // Get all weekly charts for these memberships (only those created by admin, i.e., created_by IS NULL)
-        const { data: charts, error: chartsError } = await supabaseAdmin
+        // Get ALL weekly charts for these memberships (admin + trainer created)
+        const { data: allCharts, error: chartsError } = await supabaseAdmin
             .from('weekly_charts')
             .select('*')
             .in('membership_id', membershipIds)
-            .is('created_by', null)
             .order('week_number', { ascending: false })
             .order('created_at', { ascending: false });
 
@@ -82,25 +110,76 @@ export async function GET(request: NextRequest) {
             throw chartsError;
         }
 
-        // Format response with membership info
-        const membershipsWithCharts = membershipsWithoutTrainer.map((membership: any) => {
+        // Separate into two groups:
+        // 1. Direct Admin: No trainer OR trainer period expired (admin can upload)
+        // 2. Trainer-Assigned: Has active trainer period (trainer uploads, admin can view)
+        const directAdminMemberships: any[] = [];
+        const trainerAssignedMemberships: any[] = [];
+
+        allChartEligibleMemberships.forEach((membership: any) => {
             const profile = (profiles || []).find((p: any) => p.id === membership.user_id);
-            const membershipCharts = (charts || []).filter((c: any) => c.membership_id === membership.id);
-            return {
+            const membershipCharts = (allCharts || []).filter((c: any) => c.membership_id === membership.id);
+            const hasTrainerAddon = (membership.membership_addons || []).some(
+                (a: any) => a.addon_type === 'personal_trainer' && (a.status === 'active' || a.status === 'pending')
+            );
+            const hasInGymAddon = (membership.membership_addons || []).some(
+                (a: any) => a.addon_type === 'in_gym' && (a.status === 'active' || a.status === 'pending')
+            );
+            
+            const membershipStartDate = membership.membership_start_date || membership.start_date;
+            const membershipEndDate = membership.membership_end_date || membership.end_date;
+            const trainerPeriodEnd = membership.trainer_period_end ? new Date(membership.trainer_period_end) : null;
+
+            // Use chart responsibility logic
+            const chartResp = getChartResponsibility({
+                planName: membership.plan_name,
+                hasTrainerAddon,
+                hasInGymAddon,
+                trainerPeriodEnd,
+                membershipStartDate: membershipStartDate ? new Date(membershipStartDate) : new Date(),
+                membershipEndDate: membershipEndDate ? new Date(membershipEndDate) : new Date(),
+                currentDate
+            });
+
+            const membershipData = {
                 membership_id: membership.id,
                 user_id: membership.user_id,
                 user_name: profile?.full_name || 'Unknown',
                 user_email: profile?.email || '',
                 plan_name: membership.plan_name,
                 status: membership.status,
-                start_date: membership.start_date || null,
-                charts: membershipCharts
+                start_date: membershipStartDate || null,
+                trainer_period_end: membership.trainer_period_end || null,
+                trainer_id: membership.trainer_id || null,
+                trainer_assigned: membership.trainer_assigned || false,
+                has_trainer_addon: hasTrainerAddon,
+                charts: membershipCharts,
+                chart_responsibility: chartResp.shouldUpload,
+                chart_reason: chartResp.reason
             };
+
+            const membershipDataWithFlags = {
+                ...membershipData,
+                trainer_period_expired: trainerPeriodEnd ? trainerPeriodEnd < currentDate : false,
+                admin_can_upload: chartResp.canAdminUpload,
+                trainer_can_upload: chartResp.canTrainerUpload
+            };
+
+            // Separate into sections based on responsibility
+            if (chartResp.shouldUpload === 'admin') {
+                directAdminMemberships.push(membershipDataWithFlags);
+            } else if (chartResp.shouldUpload === 'trainer') {
+                trainerAssignedMemberships.push(membershipDataWithFlags);
+            } else if (chartResp.shouldUpload === 'none') {
+                // Regular plans without trainer addon - no charts needed
+                // Skip adding to either section
+            }
         });
 
         return NextResponse.json({
-            memberships: membershipsWithCharts,
-            charts: charts || []
+            directAdminMemberships,
+            trainerAssignedMemberships,
+            charts: allCharts || []
         });
     } catch (err: any) {
         return NextResponse.json(
@@ -133,15 +212,24 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Verify that this membership doesn't have a personal trainer addon
+        // Verify membership and check trainer period status
         const { data: membership, error: membershipError } = await supabaseAdmin
             .from('memberships')
             .select(`
                 id,
                 status,
                 user_id,
+                plan_name,
+                plan_type,
+                plan_mode,
+                trainer_period_end,
+                membership_start_date,
+                start_date,
+                membership_end_date,
+                end_date,
                 membership_addons!left (
-                    addon_type
+                    addon_type,
+                    status
                 )
             `)
             .eq('id', membership_id)
@@ -154,14 +242,62 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Check if membership has personal trainer
-        const hasPersonalTrainer = (membership.membership_addons || []).some(
-            (a: any) => a.addon_type === 'personal_trainer'
+        // Get addons
+        const hasTrainerAddon = (membership.membership_addons || []).some(
+            (a: any) => a.addon_type === 'personal_trainer' && (a.status === 'active' || a.status === 'pending')
+        );
+        const hasInGymAddon = (membership.membership_addons || []).some(
+            (a: any) => a.addon_type === 'in_gym' && (a.status === 'active' || a.status === 'pending')
         );
 
-        if (hasPersonalTrainer) {
+        // Use chart responsibility logic
+        const membershipStartDate = membership.membership_start_date || membership.start_date;
+        const membershipEndDate = membership.membership_end_date || membership.end_date;
+        const trainerPeriodEnd = membership.trainer_period_end ? new Date(membership.trainer_period_end) : null;
+        const currentDate = new Date();
+        currentDate.setHours(0, 0, 0, 0);
+
+        const chartResp = getChartResponsibility({
+            planName: membership.plan_name,
+            hasTrainerAddon,
+            hasInGymAddon,
+            trainerPeriodEnd,
+            membershipStartDate: membershipStartDate ? new Date(membershipStartDate) : new Date(),
+            membershipEndDate: membershipEndDate ? new Date(membershipEndDate) : new Date(),
+            currentDate
+        });
+
+        // Admin can ALWAYS upload charts as backup (even if trainer is assigned)
+        // Only block if charts are not needed at all (Regular without trainer)
+        if (chartResp.shouldUpload === 'none') {
             return NextResponse.json(
-                { error: 'This membership has a personal trainer. Charts should be created by the trainer.' },
+                { error: 'Weekly charts are not available for this membership type.' },
+                { status: 400 }
+            );
+        }
+
+        // Check if chart type is allowed
+        const planNameLower = String(membership.plan_name || '').toLowerCase();
+        const isBasicPlan = planNameLower === 'basic';
+        
+        if (chart_type === 'diet' && isBasicPlan) {
+            return NextResponse.json(
+                { error: 'Basic plans only include workout charts, not diet charts.' },
+                { status: 400 }
+            );
+        }
+
+        // Also check using helper functions
+        if (chart_type === 'diet' && !needsDietCharts(membership.plan_name, hasTrainerAddon)) {
+            return NextResponse.json(
+                { error: 'This plan type does not include diet charts.' },
+                { status: 400 }
+            );
+        }
+
+        if (chart_type === 'workout' && !needsWorkoutCharts(membership.plan_name, hasTrainerAddon)) {
+            return NextResponse.json(
+                { error: 'This plan type does not include workout charts.' },
                 { status: 400 }
             );
         }

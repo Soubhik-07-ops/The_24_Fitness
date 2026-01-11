@@ -351,6 +351,16 @@
     color: #6b7280;
 }
 
+.spinnerSmall {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    display: inline-block;
+}
+
 .spinner {
     width: 48px;
     height: 48px;

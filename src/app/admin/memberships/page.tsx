@@ -45,7 +45,6 @@ interface Membership {
     plan_mode?: string;
     trainer_name?: string | null;
     all_payments?: any[];
-    has_renewals?: boolean; // Flag to indicate if membership has been renewed
 }
 
 interface UserGroup {
@@ -84,9 +83,6 @@ export default function MembershipsManagement() {
     const [selectedTrainerId, setSelectedTrainerId] = useState<string>('');
     const [assigningTrainer, setAssigningTrainer] = useState(false);
     const [inGymAdmissionFee, setInGymAdmissionFee] = useState(1200);
-    const [invoices, setInvoices] = useState<any[]>([]);
-    const [loadingInvoices, setLoadingInvoices] = useState(false);
-    const [deletingInvoice, setDeletingInvoice] = useState<string | null>(null);
     const itemsPerPage = 10;
     const router = useRouter();
 
@@ -257,25 +253,6 @@ export default function MembershipsManagement() {
             setLoadingPayments(false);
         }
 
-        // Fetch invoices (using admin endpoint)
-        setLoadingInvoices(true);
-        try {
-            const invoiceResponse = await fetch(`/api/admin/invoices/membership/${membership.id}`, {
-                credentials: 'include'
-            });
-            if (invoiceResponse.ok) {
-                const invoiceData = await invoiceResponse.json();
-                setInvoices(invoiceData.invoices || []);
-            } else {
-                const errorData = await invoiceResponse.json().catch(() => ({}));
-                console.error('Error fetching invoices:', errorData.error || 'Failed to fetch invoices');
-            }
-        } catch (error) {
-            console.error('Error fetching invoices:', error);
-        } finally {
-            setLoadingInvoices(false);
-        }
-
         // Fetch complete membership history for timeline and financial tabs
         setLoadingHistory(true);
         try {
@@ -416,49 +393,6 @@ export default function MembershipsManagement() {
         }
     };
 
-    const handleDeleteInvoice = async (invoiceId: string) => {
-        if (!confirm('Are you sure you want to delete this invoice? This will permanently remove the invoice PDF from storage. This action cannot be undone.')) {
-            return;
-        }
-
-        setDeletingInvoice(invoiceId);
-        try {
-            const response = await fetch(`/api/admin/invoices/${invoiceId}`, {
-                method: 'DELETE',
-                credentials: 'include'
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to delete invoice');
-            }
-
-            // Remove invoice from local state
-            setInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
-            setError(null);
-        } catch (error: any) {
-            setError(`Failed to delete invoice: ${error.message}`);
-        } finally {
-            setDeletingInvoice(null);
-        }
-    };
-
-    const getInvoiceTypeLabel = (type: string) => {
-        switch (type) {
-            case 'membership':
-                return 'Membership';
-            case 'trainer_addon':
-                return 'Trainer Addon';
-            case 'membership_renewal':
-                return 'Membership Renewal';
-            case 'trainer_renewal':
-                return 'Trainer Renewal';
-            default:
-                return type;
-        }
-    };
-
     const exportToCSV = () => {
         const headers = ['ID', 'User Name', 'User Email', 'Plan Type', 'Plan Name', 'Duration', 'Price', 'Status', 'Created At'];
         const rows: any[] = [];
@@ -527,16 +461,54 @@ export default function MembershipsManagement() {
     };
 
     // Check if trainer period is expiring soon or expired
+    // NOTE: Regular (In-Gym) plan + trainer addon should match membership validity (duration_months).
+    // Older records may have trainer_period_end saved incorrectly (same day -> 0 days).
+    const getEffectiveTrainerPeriodEnd = (membership: Membership): Date | null => {
+        if (!membership.trainer_period_end) return null;
+
+        const rawEnd = new Date(membership.trainer_period_end);
+
+        try {
+            const planLower = (membership.plan_name || '').toLowerCase();
+            const isRegularLike = planLower.includes('regular');
+            const hasAddon = Boolean(membership.trainer_addon);
+            const startStr = membership.membership_start_date || membership.start_date;
+            if (!isRegularLike || !hasAddon || !startStr) return rawEnd;
+
+            const startDate = new Date(startStr);
+            const diffDays = Math.ceil((rawEnd.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+            // If end date is same-day/next-day, treat as membership validity end
+            if (diffDays <= 1) {
+                const membershipEnd = membership.membership_end_date || membership.end_date;
+                if (membershipEnd) return new Date(membershipEnd);
+                if (membership.duration_months && membership.duration_months > 0) {
+                    const fixedEnd = new Date(startDate);
+                    fixedEnd.setMonth(fixedEnd.getMonth() + membership.duration_months);
+                    return fixedEnd;
+                }
+                return rawEnd;
+            }
+
+            return rawEnd;
+        } catch {
+            return rawEnd;
+        }
+    };
+
     const getTrainerPeriodExpirationStatus = (membership: Membership): {
         isExpiringSoon: boolean;
         isExpired: boolean;
         daysRemaining: number | null;
     } => {
-        if (!membership.trainer_period_end || !membership.trainer_assigned) {
+        if (!membership.trainer_assigned) {
             return { isExpiringSoon: false, isExpired: false, daysRemaining: null };
         }
 
-        const endDate = new Date(membership.trainer_period_end);
+        const endDate = getEffectiveTrainerPeriodEnd(membership);
+        if (!endDate) {
+            return { isExpiringSoon: false, isExpired: false, daysRemaining: null };
+        }
         const now = new Date();
         const diffTime = endDate.getTime() - now.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -700,16 +672,18 @@ export default function MembershipsManagement() {
                         const isExpanded = expandedUsers.has(userGroup.user_id);
                         const pendingCount = userGroup.memberships.filter(m => m.status === 'pending').length;
                         const activeCount = userGroup.memberships.filter(m => m.status === 'active').length;
-                        // Calculate total: base price + active addons + in-gym admission fee for each membership
+                        // Calculate total: base price + active/pending addons for each membership
                         const totalAmount = userGroup.memberships.reduce((sum, m) => {
                             const basePrice = m.price || 0;
-                            const activeAddons = (m.addons || []).filter((a: any) => a.status === 'active');
-                            const activeAddonsTotal = activeAddons
+                            // Include both active and pending addons (pending ones are being paid for)
+                            const relevantAddons = (m.addons || []).filter((a: any) =>
+                                a.status === 'active' || a.status === 'pending'
+                            );
+                            const addonsTotal = relevantAddons
                                 .reduce((addonSum: number, addon: any) => addonSum + (parseFloat(addon.price) || 0), 0);
-                            // For in-gym plans: if no active in-gym addon exists, add admission fee (from database)
-                            const hasInGymAddon = activeAddons.some((a: any) => a.addon_type === 'in_gym');
-                            const admissionFee = (m.plan_type === 'in_gym' && !hasInGymAddon) ? inGymAdmissionFee : 0;
-                            return sum + basePrice + activeAddonsTotal + admissionFee;
+                            // NOTE: For Regular Monthly (in_gym), the membership price already includes joining/admission.
+                            // For online->in_gym addon, the admission fee is already captured as an addon row.
+                            return sum + basePrice + addonsTotal;
                         }, 0);
 
                         return (
@@ -839,41 +813,7 @@ export default function MembershipsManagement() {
                                                         <div className={cardStyles.itemHeader}>
                                                             <div>
                                                                 <div className={cardStyles.itemTitle}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                                        <span>{membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)} Plan</span>
-                                                                        {(() => {
-                                                                            // Only show "Has Renewals" if membership has multiple VERIFIED payments
-                                                                            const verifiedPayments = (membership.all_payments || []).filter((p: any) => p.status === 'verified');
-                                                                            if (verifiedPayments.length > 1) {
-                                                                                return (
-                                                                                    <span style={{
-                                                                                        padding: '0.125rem 0.5rem',
-                                                                                        borderRadius: '0.375rem',
-                                                                                        background: '#f59e0b',
-                                                                                        color: 'white',
-                                                                                        fontSize: '0.75rem',
-                                                                                        fontWeight: '600'
-                                                                                    }}>
-                                                                                        🔄 Has Renewals ({verifiedPayments.length} payments)
-                                                                                    </span>
-                                                                                );
-                                                                            } else if (membership.all_payments && membership.all_payments.length === 1) {
-                                                                                return (
-                                                                                    <span style={{
-                                                                                        padding: '0.125rem 0.5rem',
-                                                                                        borderRadius: '0.375rem',
-                                                                                        background: '#3b82f6',
-                                                                                        color: 'white',
-                                                                                        fontSize: '0.75rem',
-                                                                                        fontWeight: '600'
-                                                                                    }}>
-                                                                                        🎯 Initial Purchase
-                                                                                    </span>
-                                                                                );
-                                                                            }
-                                                                            return null;
-                                                                        })()}
-                                                                    </div>
+                                                                    <span>{membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)} Plan</span>
                                                                 </div>
                                                                 <div className={cardStyles.itemMeta}>
                                                                     <span className={`${cardStyles.itemBadge} ${membership.status === 'active' ? cardStyles.badgeSuccess :
@@ -887,15 +827,6 @@ export default function MembershipsManagement() {
                                                                     <span>{membership.duration_months} months</span>
                                                                     <span>•</span>
                                                                     <span>Created: {formatDate(membership.created_at)}</span>
-                                                                    {/* Only show "Renewed" if membership actually has renewals (multiple verified payments) */}
-                                                                    {membership.has_renewals && membership.membership_start_date && membership.membership_start_date !== membership.created_at && (
-                                                                        <>
-                                                                            <span>•</span>
-                                                                            <span style={{ color: '#f59e0b', fontWeight: '500' }}>
-                                                                                Renewed: {formatDate(membership.membership_start_date)}
-                                                                            </span>
-                                                                        </>
-                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -932,13 +863,13 @@ export default function MembershipsManagement() {
                                                                 <div className={cardStyles.detailValue} style={{ fontWeight: 'bold', color: '#22c55e' }}>
                                                                     ₹{(() => {
                                                                         const basePrice = membership.price || 0;
-                                                                        const activeAddons = (membership.addons || []).filter((a: any) => a.status === 'active');
-                                                                        const activeAddonsTotal = activeAddons
+                                                                        // Include both active and pending addons (pending ones are being paid for)
+                                                                        const relevantAddons = (membership.addons || []).filter((a: any) =>
+                                                                            a.status === 'active' || a.status === 'pending'
+                                                                        );
+                                                                        const addonsTotal = relevantAddons
                                                                             .reduce((sum: number, addon: any) => sum + (parseFloat(addon.price) || 0), 0);
-                                                                        // For in-gym plans: if no active in-gym addon exists, add admission fee (from database)
-                                                                        const hasInGymAddon = activeAddons.some((a: any) => a.addon_type === 'in_gym');
-                                                                        const admissionFee = (membership.plan_type === 'in_gym' && !hasInGymAddon) ? inGymAdmissionFee : 0;
-                                                                        return (basePrice + activeAddonsTotal + admissionFee).toLocaleString();
+                                                                        return (basePrice + addonsTotal).toLocaleString();
                                                                     })()}
                                                                 </div>
                                                             </div>
@@ -1145,13 +1076,7 @@ export default function MembershipsManagement() {
                                             color: allPayments.length > 1 ? '#f59e0b' : '#3b82f6',
                                             fontWeight: '600'
                                         }}>
-                                            {(() => {
-                                                // Only show "Renewed" if membership has multiple VERIFIED payments
-                                                const verifiedPayments = allPayments.filter((p: any) => p.status === 'verified');
-                                                return verifiedPayments.length > 1
-                                                    ? '🔄 Renewed Membership (Has renewal payments)'
-                                                    : '🎯 Initial Purchase (No renewals yet)';
-                                            })()}
+                                            Payment History
                                         </span>
                                     </div>
                                     <div className={styles.detailRow}>
@@ -1207,7 +1132,7 @@ export default function MembershipsManagement() {
                                                     <span className={styles.detailLabel}>Add-ons Total:</span>
                                                     <span className={styles.detailValue}>
                                                         ₹{(selectedMembership.addons || [])
-                                                            .filter((a: any) => a.status === 'active')
+                                                            .filter((a: any) => a.status === 'active' || a.status === 'pending')
                                                             .reduce((sum: number, addon: any) => sum + (parseFloat(addon.price) || 0), 0)
                                                             .toLocaleString()}
                                                     </span>
@@ -1219,13 +1144,13 @@ export default function MembershipsManagement() {
                                             <span className={styles.detailValue} style={{ fontWeight: 'bold', fontSize: '1.1em', color: '#22c55e' }}>
                                                 ₹{(() => {
                                                     const basePrice = selectedMembership.price || 0;
-                                                    const activeAddons = (selectedMembership.addons || []).filter((a: any) => a.status === 'active');
-                                                    const activeAddonsTotal = activeAddons
+                                                    // Include both active and pending addons (pending ones are being paid for)
+                                                    const relevantAddons = (selectedMembership.addons || []).filter((a: any) =>
+                                                        a.status === 'active' || a.status === 'pending'
+                                                    );
+                                                    const addonsTotal = relevantAddons
                                                         .reduce((sum: number, addon: any) => sum + (parseFloat(addon.price) || 0), 0);
-                                                    // For in-gym plans: if no active in-gym addon exists, add admission fee (from database)
-                                                    const hasInGymAddon = activeAddons.some((a: any) => a.addon_type === 'in_gym');
-                                                    const admissionFee = (selectedMembership.plan_type === 'in_gym' && !hasInGymAddon) ? inGymAdmissionFee : 0;
-                                                        return (basePrice + activeAddonsTotal + admissionFee).toLocaleString();
+                                                    return (basePrice + addonsTotal).toLocaleString();
                                                 })()}
                                             </span>
                                         </div>
@@ -1241,16 +1166,6 @@ export default function MembershipsManagement() {
                                                             🎯 {allPayments.filter((p: any) => p.paymentType === 'initial').length} Initial Purchase
                                                         </span>
                                                     )}
-                                                    {allPayments.filter((p: any) => p.paymentType === 'membership_renewal').length > 0 && (
-                                                        <span style={{ marginRight: '1rem', color: '#f59e0b' }}>
-                                                            🔄 {allPayments.filter((p: any) => p.paymentType === 'membership_renewal').length} Membership Renewal{allPayments.filter((p: any) => p.paymentType === 'membership_renewal').length !== 1 ? 's' : ''}
-                                                        </span>
-                                                    )}
-                                                    {allPayments.filter((p: any) => p.paymentType === 'trainer_renewal').length > 0 && (
-                                                        <span style={{ marginRight: '1rem', color: '#10b981' }}>
-                                                            🔄 {allPayments.filter((p: any) => p.paymentType === 'trainer_renewal').length} Trainer Renewal{allPayments.filter((p: any) => p.paymentType === 'trainer_renewal').length !== 1 ? 's' : ''}
-                                                        </span>
-                                                    )}
                                                 </div>
                                             </div>
                                             {loadingPayments ? (
@@ -1262,9 +1177,7 @@ export default function MembershipsManagement() {
                                                             padding: '0.75rem',
                                                             border: `2px solid ${payment.paymentTypeColor || '#e5e7eb'}`,
                                                             borderRadius: '0.5rem',
-                                                            background: payment.paymentType === 'initial' ? '#eff6ff' :
-                                                                payment.paymentType === 'trainer_renewal' ? '#f0fdf4' :
-                                                                    payment.paymentType === 'membership_renewal' ? '#fffbeb' : '#f9fafb',
+                                                            background: '#f9fafb',
                                                             position: 'relative'
                                                         }}>
                                                             {/* Payment Type Badge */}
@@ -1285,10 +1198,7 @@ export default function MembershipsManagement() {
                                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingRight: '120px' }}>
                                                                 <div>
                                                                     <div style={{ fontWeight: '600', fontSize: '0.875rem', color: '#1f2937', marginBottom: '0.25rem' }}>
-                                                                        {payment.paymentType === 'initial' ? '🎯 Initial Membership Purchase' :
-                                                                            payment.paymentType === 'trainer_renewal' ? '🔄 Trainer Access Renewal' :
-                                                                                payment.paymentType === 'membership_renewal' ? '🔄 Membership Plan Renewal' :
-                                                                                    `Payment #${index + 1}`}
+                                                                        Payment #{index + 1}
                                                                     </div>
                                                                     <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>
                                                                         📅 Date: {payment.payment_date ? formatDate(payment.payment_date) : 'N/A'} •
@@ -1307,11 +1217,6 @@ export default function MembershipsManagement() {
                                                                     {payment.paymentType === 'initial' && (
                                                                         <div style={{ fontSize: '0.75rem', color: '#3b82f6', marginTop: '0.25rem', fontStyle: 'italic' }}>
                                                                             This is the original membership purchase
-                                                                        </div>
-                                                                    )}
-                                                                    {(payment.paymentType === 'trainer_renewal' || payment.paymentType === 'membership_renewal') && (
-                                                                        <div style={{ fontSize: '0.75rem', color: payment.paymentTypeColor || '#6b7280', marginTop: '0.25rem', fontStyle: 'italic' }}>
-                                                                            This payment extends the {payment.paymentType === 'trainer_renewal' ? 'trainer access period' : 'membership period'}
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -1393,7 +1298,10 @@ export default function MembershipsManagement() {
                                                 <div className={styles.detailRow}>
                                                     <span className={styles.detailLabel}>Trainer Period End:</span>
                                                     <span className={styles.detailValue}>
-                                                        {formatDate(selectedMembership.trainer_period_end)}
+                                                        {(() => {
+                                                            const effectiveEnd = getEffectiveTrainerPeriodEnd(selectedMembership);
+                                                            return effectiveEnd ? formatDate(effectiveEnd.toISOString()) : formatDate(selectedMembership.trainer_period_end);
+                                                        })()}
                                                         {(() => {
                                                             const trainerExpiration = getTrainerPeriodExpirationStatus(selectedMembership);
                                                             if (trainerExpiration.isExpiringSoon) {
@@ -1491,110 +1399,6 @@ export default function MembershipsManagement() {
                                     </div>
                                 )}
 
-                                {/* Invoices Section */}
-                                <div className={styles.detailSection}>
-                                    <h3>Invoices</h3>
-                                    {loadingInvoices ? (
-                                        <div style={{ padding: '1rem', textAlign: 'center', color: '#6b7280' }}>
-                                            Loading invoices...
-                                        </div>
-                                    ) : invoices.length > 0 ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                            {invoices.map((invoice) => (
-                                                <div key={invoice.id} style={{
-                                                    padding: '0.75rem',
-                                                    border: '1px solid #e5e7eb',
-                                                    borderRadius: '0.5rem',
-                                                    background: '#f9fafb',
-                                                    display: 'flex',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'center',
-                                                    gap: '1rem'
-                                                }}>
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ fontWeight: '600', fontSize: '0.875rem', color: '#1f2937', marginBottom: '0.25rem' }}>
-                                                            {invoice.invoice_number}
-                                                        </div>
-                                                        <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                                                            {getInvoiceTypeLabel(invoice.invoice_type)} • ₹{invoice.amount?.toLocaleString() || '0'} • {new Date(invoice.created_at).toLocaleDateString('en-IN', {
-                                                                year: 'numeric',
-                                                                month: 'short',
-                                                                day: 'numeric'
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                        <button
-                                                            onClick={async () => {
-                                                                try {
-                                                                    const response = await fetch(`/api/admin/invoices/${invoice.id}/download`, {
-                                                                        credentials: 'include'
-                                                                    });
-                                                                    const data = await response.json();
-                                                                    if (response.ok && data.downloadUrl) {
-                                                                        window.open(data.downloadUrl, '_blank');
-                                                                    } else {
-                                                                        alert(data.error || 'Failed to download invoice');
-                                                                    }
-                                                                } catch (error: any) {
-                                                                    alert('Failed to download invoice: ' + error.message);
-                                                                }
-                                                            }}
-                                                            style={{
-                                                                padding: '0.5rem 0.75rem',
-                                                                backgroundColor: '#3b82f6',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.375rem',
-                                                                cursor: 'pointer',
-                                                                fontSize: '0.875rem',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '0.5rem'
-                                                            }}
-                                                        >
-                                                            <Download size={14} />
-                                                            Download
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDeleteInvoice(invoice.id)}
-                                                            disabled={deletingInvoice === invoice.id}
-                                                            style={{
-                                                                padding: '0.5rem 0.75rem',
-                                                                backgroundColor: '#ef4444',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.375rem',
-                                                                cursor: deletingInvoice === invoice.id ? 'not-allowed' : 'pointer',
-                                                                opacity: deletingInvoice === invoice.id ? 0.6 : 1,
-                                                                fontSize: '0.875rem',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '0.5rem'
-                                                            }}
-                                                        >
-                                                            {deletingInvoice === invoice.id ? (
-                                                                <>
-                                                                    <div className={styles.spinnerSmall}></div>
-                                                                    Deleting...
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <Trash2 size={14} />
-                                                                    Delete
-                                                                </>
-                                                            )}
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div style={{ padding: '1rem', textAlign: 'center', color: '#9ca3af', fontSize: '0.875rem' }}>
-                                            No invoices found for this membership
-                                        </div>
-                                    )}
-                                </div>
                             </div>
                         </div>
 

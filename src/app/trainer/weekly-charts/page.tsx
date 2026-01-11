@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Calendar, FileText, Upload, Edit, Trash2, Plus, Download, X, ChevronDown, Clock } from 'lucide-react';
+import { Calendar, FileText, Upload, Edit, Trash2, Plus, Download, X, ChevronDown, Clock, Sparkles } from 'lucide-react';
 import Toast from '@/components/Toast/Toast';
 import { useToast } from '@/hooks/useToast';
 import styles from './weekly-charts.module.css';
@@ -49,6 +49,12 @@ export default function TrainerWeeklyChartsPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
     const [currentPage, setCurrentPage] = useState(1);
+    const [showAIModal, setShowAIModal] = useState(false);
+    const [generatingAI, setGeneratingAI] = useState(false);
+    const [aiForm, setAiForm] = useState({
+        week_number: '',
+        chart_type: 'workout'
+    });
     const itemsPerPage = 10;
     const { toast, toastType, showToast, hideToast } = useToast();
 
@@ -255,6 +261,56 @@ export default function TrainerWeeklyChartsPage() {
         } catch (error: any) {
             console.error('Error deleting chart:', error);
             showToast(`Failed to delete chart: ${error.message}`, 'error');
+        }
+    };
+
+    const handleGenerateAIChart = (client: Client) => {
+        setSelectedClient(client);
+        // Calculate suggested week number (current week or next week)
+        const suggestedWeek = client.start_date ? calculateCurrentWeek(client.start_date) : 1;
+        setAiForm({
+            week_number: suggestedWeek ? suggestedWeek.toString() : '1',
+            chart_type: 'workout'
+        });
+        setShowAIModal(true);
+    };
+
+    const handleSubmitAIGeneration = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (!selectedClient || !aiForm.week_number) {
+            showToast('Please fill in all required fields', 'error');
+            return;
+        }
+
+        try {
+            setGeneratingAI(true);
+            const response = await fetch('/api/trainer/weekly-charts/generate-ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    membership_id: selectedClient.membership_id,
+                    week_number: parseInt(aiForm.week_number),
+                    chart_type: aiForm.chart_type
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to generate chart using AI');
+            }
+
+            showToast('Chart generated successfully using AI!', 'success');
+            setShowAIModal(false);
+            setAiForm({ week_number: '', chart_type: 'workout' });
+            fetchClientsAndCharts();
+        } catch (error: any) {
+            console.error('Error generating AI chart:', error);
+            showToast(`Failed to generate chart: ${error.message}`, 'error');
+        } finally {
+            setGeneratingAI(false);
         }
     };
 
@@ -505,6 +561,24 @@ export default function TrainerWeeklyChartsPage() {
                                                                         )}
                                                                     </div>
                                                                 </div>
+                                                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleGenerateAIChart(membership);
+                                                                            }}
+                                                                            className={`${cardStyles.actionButton}`}
+                                                                            style={{ 
+                                                                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                                                color: 'white',
+                                                                                border: 'none',
+                                                                                whiteSpace: 'nowrap'
+                                                                            }}
+                                                                            title="Generate chart using AI based on user's form data"
+                                                                        >
+                                                                            <Sparkles size={16} />
+                                                                            AI Generate
+                                                                        </button>
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
@@ -516,6 +590,7 @@ export default function TrainerWeeklyChartsPage() {
                                                                     <Plus size={16} />
                                                                     Add Now
                                                                 </button>
+                                                                    </div>
                                                             </div>
                                                         )}
 
@@ -534,17 +609,34 @@ export default function TrainerWeeklyChartsPage() {
                                                                         </span>
                                                                     </div>
                                                                 </div>
+                                                                    <div style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto' }}>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleGenerateAIChart(membership);
+                                                                            }}
+                                                                            className={`${cardStyles.actionButton}`}
+                                                                            style={{ 
+                                                                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                                                color: 'white',
+                                                                                border: 'none'
+                                                                            }}
+                                                                            title="Generate chart using AI based on user's form data"
+                                                                        >
+                                                                            <Sparkles size={16} />
+                                                                            AI Generate
+                                                                        </button>
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         handleCreateChart(membership);
                                                                     }}
                                                                     className={`${cardStyles.actionButton} ${cardStyles.actionButtonPrimary}`}
-                                                                    style={{ marginLeft: 'auto' }}
                                                                 >
                                                                     <Plus size={16} />
                                                                     Add Chart
                                                                 </button>
+                                                                    </div>
                                                             </div>
 
                                                             {membership.charts.length === 0 ? (
@@ -805,6 +897,128 @@ export default function TrainerWeeklyChartsPage() {
                                     disabled={uploadingFile}
                                 >
                                     {uploadingFile ? 'Uploading...' : (editingChart ? 'Update Chart' : 'Create Chart')}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Generation Modal */}
+            {showAIModal && selectedClient && (
+                <div className={styles.modalOverlay} onClick={() => setShowAIModal(false)}>
+                    <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+                        <div className={styles.modalHeader}>
+                            <h2>Generate Chart Using AI</h2>
+                            <button
+                                className={styles.modalClose}
+                                onClick={() => setShowAIModal(false)}
+                                disabled={generatingAI}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmitAIGeneration} className={styles.modalBody}>
+                            <div style={{ 
+                                padding: '1rem', 
+                                background: '#f0f9ff', 
+                                borderRadius: '0.5rem', 
+                                marginBottom: '1.5rem',
+                                border: '1px solid #bae6fd'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                    <Sparkles size={18} style={{ color: '#667eea' }} />
+                                    <strong style={{ color: '#1e40af' }}>AI-Powered Chart Generation</strong>
+                                </div>
+                                <p style={{ fontSize: '0.875rem', color: '#1e40af', margin: 0 }}>
+                                    The AI will analyze the client's membership form data (health goals, medical conditions, 
+                                    dietary preferences, activity level, etc.) to create a personalized {aiForm.chart_type} chart 
+                                    for Week {aiForm.week_number || '?'}.
+                                </p>
+                            </div>
+
+                            <div className={styles.formGroup}>
+                                <label htmlFor="ai_week_number">Week Number *</label>
+                                <input
+                                    type="number"
+                                    id="ai_week_number"
+                                    value={aiForm.week_number}
+                                    onChange={(e) => setAiForm(prev => ({ ...prev, week_number: e.target.value }))}
+                                    min="1"
+                                    required
+                                    disabled={generatingAI}
+                                />
+                                <small className={styles.helpText}>
+                                    Suggested: Week {selectedClient.start_date ? calculateCurrentWeek(selectedClient.start_date) || 1 : 1}
+                                </small>
+                            </div>
+
+                            <div className={styles.formGroup}>
+                                <label htmlFor="ai_chart_type">Chart Type *</label>
+                                <select
+                                    id="ai_chart_type"
+                                    value={aiForm.chart_type}
+                                    onChange={(e) => setAiForm(prev => ({ ...prev, chart_type: e.target.value }))}
+                                    required
+                                    disabled={generatingAI}
+                                >
+                                    <option value="workout">Workout Plan</option>
+                                    <option value="diet">Diet Plan</option>
+                                </select>
+                                <small className={styles.helpText}>
+                                    {selectedClient.plan_name.toLowerCase() === 'basic' && aiForm.chart_type === 'diet' && 
+                                        'Note: Basic plans typically only include workout charts.'}
+                                </small>
+                            </div>
+
+                            <div style={{ 
+                                padding: '1rem', 
+                                background: '#fef3c7', 
+                                borderRadius: '0.5rem', 
+                                marginTop: '1rem',
+                                border: '1px solid #fcd34d'
+                            }}>
+                                <div style={{ fontSize: '0.875rem', color: '#92400e' }}>
+                                    <strong>⚠️ Important:</strong>
+                                    <ul style={{ marginTop: '0.5rem', paddingLeft: '1.5rem' }}>
+                                        <li>Ensure the client has submitted their membership application form with complete information</li>
+                                        <li>The AI will use all available form data to personalize the chart</li>
+                                        <li>Review the generated chart before it's sent to the client</li>
+                                        <li>Generation may take 10-30 seconds</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div className={styles.modalFooter}>
+                                <button
+                                    type="button"
+                                    className={styles.cancelButton}
+                                    onClick={() => setShowAIModal(false)}
+                                    disabled={generatingAI}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className={styles.submitButton}
+                                    disabled={generatingAI}
+                                    style={{
+                                        background: generatingAI ? '#9ca3af' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        border: 'none'
+                                    }}
+                                >
+                                    {generatingAI ? (
+                                        <>
+                                            <div className={styles.spinnerSmall} style={{ marginRight: '0.5rem' }}></div>
+                                            Generating...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles size={18} style={{ marginRight: '0.5rem' }} />
+                                            Generate Chart
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </form>

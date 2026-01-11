@@ -3,6 +3,7 @@
 
 import React from 'react'
 import styles from '../../app/membership/form/form.module.css'
+import { getTranslation, type Language, translations } from '@/lib/formTranslations'
 
 interface FormData {
     [key: string]: any
@@ -14,6 +15,7 @@ interface FormSectionsProps {
     handleFamilyHistoryChange: (condition: string, field: string, value: string | boolean) => void
     handleMedicalConditionDetails: (condition: string, details: string) => void
     currentSection: number
+    language?: Language
 }
 
 const medicalConditionsList = [
@@ -27,7 +29,8 @@ const medicalConditionsList = [
 ]
 
 export const renderFormSection = (props: FormSectionsProps) => {
-    const { formData, handleChange, handleFamilyHistoryChange, handleMedicalConditionDetails, currentSection } = props
+    const { formData, handleChange, handleFamilyHistoryChange, handleMedicalConditionDetails, currentSection, language = 'en' } = props
+    const t = (key: keyof typeof translations.en) => getTranslation(language, key)
 
     // Section 1: Personal Information (handled in main file)
     if (currentSection === 0) return null
@@ -36,21 +39,26 @@ export const renderFormSection = (props: FormSectionsProps) => {
     if (currentSection === 1) {
         return (
             <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Medical Information</h2>
+                <h2 className={styles.sectionTitle}>{t('medicalInformation')}</h2>
 
                 <div className={styles.formGroupFull}>
-                    <label>1. How would you describe your present state of health? *</label>
+                    <label>1. {t('presentHealthState')} {t('required')}</label>
                     <div className={styles.radioGroup}>
-                        {['Very well', 'Healthy', 'Unhealthy', 'Unwell'].map(option => (
-                            <label key={option} className={styles.radioLabel}>
+                        {[
+                            { en: 'Very well', hi: 'बहुत अच्छा', value: 'very_well' },
+                            { en: 'Healthy', hi: 'स्वस्थ', value: 'healthy' },
+                            { en: 'Unhealthy', hi: 'अस्वस्थ', value: 'unhealthy' },
+                            { en: 'Unwell', hi: 'बीमार', value: 'unwell' }
+                        ].map(option => (
+                            <label key={option.value} className={styles.radioLabel}>
                                 <input
                                     type="radio"
                                     name="presentHealthState"
-                                    value={option.toLowerCase().replace(' ', '_')}
-                                    checked={formData.presentHealthState === option.toLowerCase().replace(' ', '_')}
+                                    value={option.value}
+                                    checked={formData.presentHealthState === option.value}
                                     onChange={handleChange}
                                 />
-                                {option}
+                                {language === 'hi' ? option.hi : option.en}
                             </label>
                         ))}
                         <label className={styles.radioLabel}>
@@ -61,7 +69,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.presentHealthState === 'other'}
                                 onChange={handleChange}
                             />
-                            Other:
+                            {t('otherHealthState')}:
                             <input
                                 type="text"
                                 name="presentHealthStateOther"
@@ -76,7 +84,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
 
                 <div className={styles.formGroupFull}>
                     <label htmlFor="currentMedications">
-                        2. List current medications, how often you take them, and dosages (include prescriptions and over-the-counter medications).
+                        2. {t('currentMedications')}
                     </label>
                     <textarea
                         id="currentMedications"
@@ -84,12 +92,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                         value={formData.currentMedications || ''}
                         onChange={handleChange}
                         rows={4}
-                        placeholder="List medications, frequency, and dosages"
+                        placeholder={t('listMedications')}
                     />
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. Do you take all of your medications as they have been prescribed by your healthcare provider? *</label>
+                    <label>3. {t('medicationAdherence')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -99,7 +107,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.medicationAdherence === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -109,13 +117,23 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.medicationAdherence === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
+                        </label>
+                        <label className={styles.radioLabel}>
+                            <input
+                                type="radio"
+                                name="medicationAdherence"
+                                value="sometimes"
+                                checked={formData.medicationAdherence === 'sometimes'}
+                                onChange={handleChange}
+                            />
+                            {t('sometimes')}
                         </label>
                     </div>
-                    {formData.medicationAdherence === 'no' && (
+                    {(formData.medicationAdherence === 'no' || formData.medicationAdherence === 'sometimes') && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
                             <label htmlFor="medicationAdherenceReason">
-                                If not, please share why (e.g., cost, side effects, or feeling as though they are unnecessary).
+                                {t('medicationAdherenceReason')}
                             </label>
                             <textarea
                                 id="medicationAdherenceReason"
@@ -129,7 +147,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>4. Do you take any vitamin, mineral, or herbal supplements? *</label>
+                    <label>4. {t('supplements')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -139,7 +157,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.supplements === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -149,12 +167,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.supplements === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.supplements === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="supplementsList">If yes, list type and amount per day:</label>
+                            <label htmlFor="supplementsList">{t('supplementsList')}</label>
                             <textarea
                                 id="supplementsList"
                                 name="supplementsList"
@@ -167,7 +185,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="lastPhysicianVisit">5. When was the last time you visited your physician?</label>
+                    <label htmlFor="lastPhysicianVisit">5. {t('lastPhysicianVisit')}</label>
                     <input
                         type="date"
                         id="lastPhysicianVisit"
@@ -179,7 +197,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>6. Have you ever had your cholesterol checked? *</label>
+                    <label>6. {t('cholesterolChecked')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -189,7 +207,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.cholesterolChecked === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -199,13 +217,13 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.cholesterolChecked === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.cholesterolChecked === 'yes' && (
                         <div className={styles.formGrid} style={{ marginTop: '1rem' }}>
                             <div className={styles.formGroup}>
-                                <label htmlFor="cholesterolDate">Date of test:</label>
+                                <label htmlFor="cholesterolDate">{t('cholesterolDate')}</label>
                                 <input
                                     type="date"
                                     id="cholesterolDate"
@@ -215,7 +233,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="totalCholesterol">Total cholesterol:</label>
+                                <label htmlFor="totalCholesterol">{t('totalCholesterol')}</label>
                                 <input
                                     type="text"
                                     id="totalCholesterol"
@@ -225,7 +243,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="hdl">High-density lipoprotein (HDL):</label>
+                                <label htmlFor="hdl">{t('hdl')}</label>
                                 <input
                                     type="text"
                                     id="hdl"
@@ -235,7 +253,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="ldl">Low-density lipoprotein (LDL):</label>
+                                <label htmlFor="ldl">{t('ldl')}</label>
                                 <input
                                     type="text"
                                     id="ldl"
@@ -245,7 +263,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="triglycerides">Triglycerides:</label>
+                                <label htmlFor="triglycerides">{t('triglycerides')}</label>
                                 <input
                                     type="text"
                                     id="triglycerides"
@@ -259,7 +277,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>7. Have you ever had your blood sugar checked? *</label>
+                    <label>7. {t('bloodSugarChecked')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -269,7 +287,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.bloodSugarChecked === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -279,12 +297,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.bloodSugarChecked === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.bloodSugarChecked === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="bloodSugarResults">What were the results?</label>
+                            <label htmlFor="bloodSugarResults">{t('bloodSugarResults')}</label>
                             <textarea
                                 id="bloodSugarResults"
                                 name="bloodSugarResults"
@@ -297,7 +315,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>8. Please check any that apply to you and list any important information about your condition:</label>
+                    <label>8. {t('medicalConditions')}</label>
                     <div className={styles.checkboxGrid}>
                         {medicalConditionsList.map(condition => {
                             const key = condition.toLowerCase().replace(/[^a-z0-9]/g, '_')
@@ -315,7 +333,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                     {condition === 'Allergies' && (formData.medicalConditions?.[key]?.checked) && (
                                         <input
                                             type="text"
-                                            placeholder="Specify allergies"
+                                            placeholder={language === 'hi' ? 'एलर्जी निर्दिष्ट करें' : 'Specify allergies'}
                                             value={formData.medicalConditions?.[key]?.details || ''}
                                             onChange={(e) => handleMedicalConditionDetails(key, e.target.value)}
                                             className={styles.detailsInput}
@@ -323,7 +341,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                     )}
                                     {(formData.medicalConditions?.[key]?.checked) && condition !== 'Allergies' && (
                                         <textarea
-                                            placeholder="Details"
+                                            placeholder={language === 'hi' ? 'विवरण' : 'Details'}
                                             value={formData.medicalConditions?.[key]?.details || ''}
                                             onChange={(e) => handleMedicalConditionDetails(key, e.target.value)}
                                             rows={1}
@@ -337,7 +355,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="majorSurgeries">Major surgeries:</label>
+                    <label htmlFor="majorSurgeries">{t('majorSurgeries')}</label>
                     <textarea
                         id="majorSurgeries"
                         name="majorSurgeries"
@@ -348,7 +366,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="pastInjuries">Past injuries:</label>
+                    <label htmlFor="pastInjuries">{t('pastInjuries')}</label>
                     <textarea
                         id="pastInjuries"
                         name="pastInjuries"
@@ -359,7 +377,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="otherHealthConditions">Describe any other health conditions that you have:</label>
+                    <label htmlFor="otherHealthConditions">{t('otherHealthConditions')}</label>
                     <textarea
                         id="otherHealthConditions"
                         name="otherHealthConditions"
@@ -375,20 +393,20 @@ export const renderFormSection = (props: FormSectionsProps) => {
     // Section 3: Family History
     if (currentSection === 2) {
         const familyConditions = ['heartDisease', 'highCholesterol', 'highBloodPressure', 'cancer', 'diabetes', 'osteoporosis']
-        const conditionLabels: { [key: string]: string } = {
-            heartDisease: 'Heart disease',
-            highCholesterol: 'High cholesterol',
-            highBloodPressure: 'High blood pressure',
-            cancer: 'Cancer',
-            diabetes: 'Diabetes',
-            osteoporosis: 'Osteoporosis'
+        const conditionLabels: { [key: string]: { en: string; hi: string } } = {
+            heartDisease: { en: 'Heart disease', hi: 'हृदय रोग' },
+            highCholesterol: { en: 'High cholesterol', hi: 'उच्च कोलेस्ट्रॉल' },
+            highBloodPressure: { en: 'High blood pressure', hi: 'उच्च रक्तचाप' },
+            cancer: { en: 'Cancer', hi: 'कैंसर' },
+            diabetes: { en: 'Diabetes', hi: 'मधुमेह' },
+            osteoporosis: { en: 'Osteoporosis', hi: 'ऑस्टियोपोरोसिस' }
         }
 
         return (
             <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Family History</h2>
+                <h2 className={styles.sectionTitle}>{t('familyHistory')}</h2>
                 <div className={styles.formGroupFull}>
-                    <label>1. Has anyone in your immediate family been diagnosed with the following?</label>
+                    <label>1. {t('familyHistoryQuestion')}</label>
                     {familyConditions.map(condition => (
                         <div key={condition} className={styles.familyHistoryItem}>
                             <label className={styles.checkboxLabel}>
@@ -397,28 +415,28 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                     checked={formData.familyHistory?.[condition]?.checked || false}
                                     onChange={(e) => handleFamilyHistoryChange(condition, 'checked', e.target.checked)}
                                 />
-                                {conditionLabels[condition]}
+                                {language === 'hi' ? conditionLabels[condition].hi : conditionLabels[condition].en}
                             </label>
                             {formData.familyHistory?.[condition]?.checked && (
                                 <div className={styles.formGrid} style={{ marginTop: '0.5rem' }}>
                                     <div className={styles.formGroup}>
-                                        <label htmlFor={`${condition}_relation`}>If yes, what is the relation?</label>
+                                        <label htmlFor={`${condition}_relation`}>{t('relation')}</label>
                                         <input
                                             type="text"
                                             id={`${condition}_relation`}
                                             value={formData.familyHistory?.[condition]?.relation || ''}
                                             onChange={(e) => handleFamilyHistoryChange(condition, 'relation', e.target.value)}
-                                            placeholder="e.g., Mother, Father, Sibling"
+                                            placeholder={language === 'hi' ? 'जैसे, माँ, पिता, भाई-बहन' : 'e.g., Mother, Father, Sibling'}
                                         />
                                     </div>
                                     <div className={styles.formGroup}>
-                                        <label htmlFor={`${condition}_age`}>Age of diagnosis:</label>
+                                        <label htmlFor={`${condition}_age`}>{t('ageAtDiagnosis')}</label>
                                         <input
                                             type="text"
                                             id={`${condition}_age`}
                                             value={formData.familyHistory?.[condition]?.age || ''}
                                             onChange={(e) => handleFamilyHistoryChange(condition, 'age', e.target.value)}
-                                            placeholder="Age"
+                                            placeholder={language === 'hi' ? 'उम्र' : 'Age'}
                                         />
                                     </div>
                                 </div>
@@ -432,25 +450,31 @@ export const renderFormSection = (props: FormSectionsProps) => {
 
     // Section 4: Nutrition
     if (currentSection === 3) {
+        const foodPreparationOptions = [
+            { en: 'Self', hi: 'स्वयं' },
+            { en: 'Spouse', hi: 'पति/पत्नी' },
+            { en: 'Parent', hi: 'माता-पिता' },
+            { en: 'Minimal preparation', hi: 'न्यूनतम तैयारी' }
+        ]
+
         return (
             <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Nutrition</h2>
+                <h2 className={styles.sectionTitle}>{t('nutrition')}</h2>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="dietaryGoals">1. What are your dietary goals? *</label>
+                    <label htmlFor="dietaryGoals">1. {t('dietaryGoals')}</label>
                     <textarea
                         id="dietaryGoals"
                         name="dietaryGoals"
                         value={formData.dietaryGoals || ''}
                         onChange={handleChange}
                         rows={3}
-                        required
-                        placeholder="Describe your dietary goals"
+                        placeholder={language === 'hi' ? 'अपने आहार लक्ष्यों का वर्णन करें' : 'Describe your dietary goals'}
                     />
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. Have you ever followed a modified diet? *</label>
+                    <label>2. {t('modifiedDiet')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -460,7 +484,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.modifiedDiet === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -470,12 +494,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.modifiedDiet === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.modifiedDiet === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="modifiedDietDescription">If yes, describe:</label>
+                            <label htmlFor="modifiedDietDescription">{t('modifiedDietDescription')}</label>
                             <textarea
                                 id="modifiedDietDescription"
                                 name="modifiedDietDescription"
@@ -488,7 +512,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. Are you currently following a specialized eating plan (e.g., low-sodium or low-fat)? *</label>
+                    <label>3. {t('specializedEatingPlan')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -498,7 +522,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.specializedEatingPlan === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -508,13 +532,13 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.specializedEatingPlan === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.specializedEatingPlan === 'yes' && (
                         <>
                             <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                                <label htmlFor="eatingPlanType">If yes, what type of eating plan?</label>
+                                <label htmlFor="eatingPlanType">{t('eatingPlanType')}</label>
                                 <input
                                     type="text"
                                     id="eatingPlanType"
@@ -524,7 +548,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroupFull}>
-                                <label htmlFor="eatingPlanReason">Why did you choose this eating plan?</label>
+                                <label htmlFor="eatingPlanReason">{t('eatingPlanReason')}</label>
                                 <textarea
                                     id="eatingPlanReason"
                                     name="eatingPlanReason"
@@ -534,7 +558,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroupFull}>
-                                <label>Was the eating plan prescribed by a physician?</label>
+                                <label>{t('eatingPlanPrescribed')}</label>
                                 <div className={styles.radioGroup}>
                                     <label className={styles.radioLabel}>
                                         <input
@@ -544,7 +568,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                             checked={formData.eatingPlanPrescribed === 'yes'}
                                             onChange={handleChange}
                                         />
-                                        Yes
+                                        {t('yes')}
                                     </label>
                                     <label className={styles.radioLabel}>
                                         <input
@@ -554,12 +578,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                             checked={formData.eatingPlanPrescribed === 'no'}
                                             onChange={handleChange}
                                         />
-                                        No
+                                        {t('no')}
                                     </label>
                                 </div>
                             </div>
                             <div className={styles.formGroupFull}>
-                                <label htmlFor="eatingPlanDuration">How long have you been on the eating plan?</label>
+                                <label htmlFor="eatingPlanDuration">{t('eatingPlanDuration')}</label>
                                 <input
                                     type="text"
                                     id="eatingPlanDuration"
@@ -573,7 +597,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>5. Have you ever met with a registered dietitian or attended diabetes education classes? *</label>
+                    <label>5. {t('dietitianConsultation')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -583,7 +607,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.dietitianConsultation === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -593,12 +617,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.dietitianConsultation === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.dietitianConsultation === 'no' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label>If no, are you interested in doing so?</label>
+                            <label>{t('dietitianInterest')}</label>
                             <div className={styles.radioGroup}>
                                 <label className={styles.radioLabel}>
                                     <input
@@ -608,7 +632,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                         checked={formData.dietitianInterest === 'yes'}
                                         onChange={handleChange}
                                     />
-                                    Yes
+                                    {t('yes')}
                                 </label>
                                 <label className={styles.radioLabel}>
                                     <input
@@ -618,7 +642,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                         checked={formData.dietitianInterest === 'no'}
                                         onChange={handleChange}
                                     />
-                                    No
+                                    {t('no')}
                                 </label>
                             </div>
                         </div>
@@ -626,9 +650,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="nutritionalIssues">
-                        6. What do you consider to be the major issues with your nutritional choices or eating plan (e.g., eating late at night, snacking on high-fat foods, skipping meals, or lack of variety)?
-                    </label>
+                    <label htmlFor="nutritionalIssues">6. {t('nutritionalIssues')}</label>
                     <textarea
                         id="nutritionalIssues"
                         name="nutritionalIssues"
@@ -639,7 +661,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="waterIntake">7. How many glasses of water do you drink per day?</label>
+                    <label htmlFor="waterIntake">7. {t('waterIntake')}</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <input
                             type="number"
@@ -650,12 +672,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                             min="0"
                             style={{ flex: 1 }}
                         />
-                        <span>8-ounce glasses</span>
+                        <span>{language === 'hi' ? '8-औंस गिलास' : '8-ounce glasses'}</span>
                     </div>
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="otherBeverages">8. What do you drink other than water? List what and how much per day.</label>
+                    <label htmlFor="otherBeverages">8. {t('otherBeverages')}</label>
                     <textarea
                         id="otherBeverages"
                         name="otherBeverages"
@@ -666,7 +688,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>9. Do you have any food allergies or intolerance? *</label>
+                    <label>9. {t('foodAllergies')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -676,7 +698,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.foodAllergies === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -686,12 +708,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.foodAllergies === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.foodAllergies === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="foodAllergiesList">If yes, what?</label>
+                            <label htmlFor="foodAllergiesList">{t('foodAllergiesList')}</label>
                             <input
                                 type="text"
                                 id="foodAllergiesList"
@@ -704,24 +726,24 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>10. Who shops for and prepares your food?</label>
+                    <label>10. {t('foodPreparation')}</label>
                     <div className={styles.checkboxGroup}>
-                        {['Self', 'Spouse', 'Parent', 'Minimal preparation'].map(option => (
-                            <label key={option} className={styles.checkboxLabel}>
+                        {foodPreparationOptions.map(option => (
+                            <label key={option.en} className={styles.checkboxLabel}>
                                 <input
                                     type="checkbox"
-                                    name={`foodPreparation_${option.toLowerCase().replace(' ', '_')}`}
-                                    checked={formData.foodPreparation?.includes(option.toLowerCase().replace(' ', '_')) || false}
+                                    name={`foodPreparation_${option.en.toLowerCase().replace(' ', '_')}`}
+                                    checked={formData.foodPreparation?.includes(option.en.toLowerCase().replace(' ', '_')) || false}
                                     onChange={handleChange}
                                 />
-                                {option}
+                                {language === 'hi' ? option.hi : option.en}
                             </label>
                         ))}
                     </div>
                 </div>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="dineOutFrequency">11. How often do you dine out?</label>
+                    <label htmlFor="dineOutFrequency">11. {t('dineOutFrequency')}</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <input
                             type="number"
@@ -732,15 +754,15 @@ export const renderFormSection = (props: FormSectionsProps) => {
                             min="0"
                             style={{ flex: 1 }}
                         />
-                        <span>times per week</span>
+                        <span>{language === 'hi' ? 'सप्ताह में बार' : 'times per week'}</span>
                     </div>
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>12. Please specify the type of restaurants for each meal:</label>
+                    <label>12. {language === 'hi' ? 'कृपया प्रत्येक भोजन के लिए रेस्तरां के प्रकार निर्दिष्ट करें:' : 'Please specify the type of restaurants for each meal:'}</label>
                     <div className={styles.formGrid}>
                         <div className={styles.formGroup}>
-                            <label htmlFor="restaurantBreakfast">Breakfast:</label>
+                            <label htmlFor="restaurantBreakfast">{t('restaurantBreakfast')}</label>
                             <input
                                 type="text"
                                 id="restaurantBreakfast"
@@ -750,7 +772,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                             />
                         </div>
                         <div className={styles.formGroup}>
-                            <label htmlFor="restaurantLunch">Lunch:</label>
+                            <label htmlFor="restaurantLunch">{t('restaurantLunch')}</label>
                             <input
                                 type="text"
                                 id="restaurantLunch"
@@ -760,7 +782,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                             />
                         </div>
                         <div className={styles.formGroup}>
-                            <label htmlFor="restaurantDinner">Dinner:</label>
+                            <label htmlFor="restaurantDinner">{t('restaurantDinner')}</label>
                             <input
                                 type="text"
                                 id="restaurantDinner"
@@ -770,7 +792,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                             />
                         </div>
                         <div className={styles.formGroup}>
-                            <label htmlFor="restaurantSnacks">Snacks:</label>
+                            <label htmlFor="restaurantSnacks">{t('restaurantSnacks')}</label>
                             <input
                                 type="text"
                                 id="restaurantSnacks"
@@ -783,7 +805,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>13. Do you crave any foods? *</label>
+                    <label>13. {t('foodCravings')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -793,7 +815,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.foodCravings === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -803,12 +825,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.foodCravings === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.foodCravings === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="foodCravingsList">If yes, please specify:</label>
+                            <label htmlFor="foodCravingsList">{t('foodCravingsList')}</label>
                             <input
                                 type="text"
                                 id="foodCravingsList"
@@ -827,10 +849,10 @@ export const renderFormSection = (props: FormSectionsProps) => {
     if (currentSection === 4) {
         return (
             <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Substance-related Habits</h2>
+                <h2 className={styles.sectionTitle}>{t('substanceHabits')}</h2>
 
                 <div className={styles.formGroupFull}>
-                    <label>1. Do you drink alcohol? *</label>
+                    <label>1. {t('alcohol')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -840,7 +862,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.alcohol === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -850,13 +872,13 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.alcohol === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.alcohol === 'yes' && (
                         <div className={styles.formGrid} style={{ marginTop: '1rem' }}>
                             <div className={styles.formGroup}>
-                                <label htmlFor="alcoholFrequency">If yes, how often?</label>
+                                <label htmlFor="alcoholFrequency">{t('alcoholFrequency')}</label>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     <input
                                         type="number"
@@ -867,11 +889,11 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                         min="0"
                                         style={{ flex: 1 }}
                                     />
-                                    <span>times per week</span>
+                                    <span>{language === 'hi' ? 'सप्ताह में बार' : 'times per week'}</span>
                                 </div>
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="alcoholAmount">Average amount?</label>
+                                <label htmlFor="alcoholAmount">{t('alcoholAmount')}</label>
                                 <input
                                     type="text"
                                     id="alcoholAmount"
@@ -885,7 +907,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. Do you drink caffeinated beverages? *</label>
+                    <label>2. {t('caffeinatedBeverages')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -895,7 +917,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.caffeinatedBeverages === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -905,12 +927,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.caffeinatedBeverages === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.caffeinatedBeverages === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="caffeineAmount">If yes, average number per day:</label>
+                            <label htmlFor="caffeineAmount">{t('caffeineAmount')}</label>
                             <input
                                 type="number"
                                 id="caffeineAmount"
@@ -924,7 +946,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. Do you use tobacco? *</label>
+                    <label>3. {t('tobacco')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -934,7 +956,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.tobacco === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -944,14 +966,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.tobacco === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.tobacco === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="tobaccoAmount">
-                                If yes, how much (cigarettes, cigars, or chewing tobacco per day)?
-                            </label>
+                            <label htmlFor="tobaccoAmount">{t('tobaccoAmount')}</label>
                             <input
                                 type="text"
                                 id="tobaccoAmount"
@@ -970,10 +990,10 @@ export const renderFormSection = (props: FormSectionsProps) => {
     if (currentSection === 5) {
         return (
             <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Physical Activity</h2>
+                <h2 className={styles.sectionTitle}>{t('physicalActivity')}</h2>
 
                 <div className={styles.formGroupFull}>
-                    <label>1. Do you currently participate in any structured physical activity? *</label>
+                    <label>1. {t('structuredActivity')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -983,7 +1003,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.structuredActivity === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -993,13 +1013,13 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.structuredActivity === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.structuredActivity === 'yes' && (
                         <div className={styles.formGrid} style={{ marginTop: '1rem' }}>
                             <div className={styles.formGroup}>
-                                <label htmlFor="cardioMinutes">Cardiorespiratory activity:</label>
+                                <label htmlFor="cardioMinutes">{language === 'hi' ? 'हृदय-श्वसन गतिविधि:' : 'Cardiorespiratory activity:'}</label>
                                 <input
                                     type="number"
                                     id="cardioMinutes"
@@ -1011,7 +1031,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="cardioTimesPerWeek">Times per week:</label>
+                                <label htmlFor="cardioTimesPerWeek">{t('cardioTimesPerWeek')}</label>
                                 <input
                                     type="number"
                                     id="cardioTimesPerWeek"
@@ -1022,7 +1042,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="muscularTrainingSessions">Muscular-training sessions per week:</label>
+                                <label htmlFor="muscularTrainingSessions">{t('muscularTrainingSessions')}</label>
                                 <input
                                     type="number"
                                     id="muscularTrainingSessions"
@@ -1033,7 +1053,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="flexibilitySessions">Flexibility-training sessions per week:</label>
+                                <label htmlFor="flexibilitySessions">{t('flexibilitySessions')}</label>
                                 <input
                                     type="number"
                                     id="flexibilitySessions"
@@ -1044,7 +1064,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="sportsMinutes">Sports or recreational activities (minutes per week):</label>
+                                <label htmlFor="sportsMinutes">{t('sportsMinutes')}</label>
                                 <input
                                     type="number"
                                     id="sportsMinutes"
@@ -1055,7 +1075,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroupFull}>
-                                <label htmlFor="sportsActivities">List sports or activities you participate in:</label>
+                                <label htmlFor="sportsActivities">{t('sportsActivities')}</label>
                                 <input
                                     type="text"
                                     id="sportsActivities"
@@ -1069,7 +1089,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. Do you engage in any other forms of regular physical activity? *</label>
+                    <label>2. {t('otherPhysicalActivity')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1079,7 +1099,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.otherPhysicalActivity === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -1089,12 +1109,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.otherPhysicalActivity === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.otherPhysicalActivity === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="otherPhysicalActivityDescription">If yes, describe:</label>
+                            <label htmlFor="otherPhysicalActivityDescription">{t('otherPhysicalActivityDescription')}</label>
                             <input
                                 type="text"
                                 id="otherPhysicalActivityDescription"
@@ -1107,7 +1127,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. Have you ever experienced any injuries that may limit your physical activity? *</label>
+                    <label>3. {t('activityInjuries')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1117,7 +1137,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.activityInjuries === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -1127,12 +1147,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.activityInjuries === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.activityInjuries === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="activityInjuriesDescription">If yes, describe:</label>
+                            <label htmlFor="activityInjuriesDescription">{t('activityInjuriesDescription')}</label>
                             <input
                                 type="text"
                                 id="activityInjuriesDescription"
@@ -1145,7 +1165,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="activityRestrictions">4. Do you have any physical-activity restrictions? If so, please list:</label>
+                    <label htmlFor="activityRestrictions">4. {t('activityRestrictions')}</label>
                     <textarea
                         id="activityRestrictions"
                         name="activityRestrictions"
@@ -1185,10 +1205,10 @@ export const renderFormSection = (props: FormSectionsProps) => {
     if (currentSection === 6) {
         return (
             <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Occupational</h2>
+                <h2 className={styles.sectionTitle}>{t('occupational')}</h2>
 
                 <div className={styles.formGroupFull}>
-                    <label>1. Do you work? *</label>
+                    <label>1. {t('work')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1198,7 +1218,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.work === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -1208,13 +1228,13 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.work === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.work === 'yes' && (
                         <>
                             <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                                <label htmlFor="occupation">If yes, what is your occupation?</label>
+                                <label htmlFor="occupation">{t('occupation')}</label>
                                 <input
                                     type="text"
                                     id="occupation"
@@ -1224,7 +1244,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 />
                             </div>
                             <div className={styles.formGroupFull}>
-                                <label htmlFor="workSchedule">If you work, what is your work schedule?</label>
+                                <label htmlFor="workSchedule">{t('workSchedule')}</label>
                                 <input
                                     type="text"
                                     id="workSchedule"
@@ -1238,7 +1258,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="workActivityLevel">2. Describe your activity level during the work day:</label>
+                    <label htmlFor="workActivityLevel">2. {t('workActivityLevel')}</label>
                     <textarea
                         id="workActivityLevel"
                         name="workActivityLevel"
@@ -1255,10 +1275,10 @@ export const renderFormSection = (props: FormSectionsProps) => {
     if (currentSection === 7) {
         return (
             <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Sleep and Stress</h2>
+                <h2 className={styles.sectionTitle}>{t('sleepAndStress')}</h2>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="sleepHours">1. How many hours of sleep do you get at night?</label>
+                    <label htmlFor="sleepHours">1. {t('sleepHours')}</label>
                     <input
                         type="number"
                         id="sleepHours"
@@ -1272,9 +1292,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="stressLevel">
-                        2. Rate your average stress level from 1 (no stress) to 10 (constant stress).
-                    </label>
+                    <label htmlFor="stressLevel">2. {t('stressLevel')}</label>
                     <input
                         type="number"
                         id="stressLevel"
@@ -1287,7 +1305,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="stressCauses">3. What is most stressful to you?</label>
+                    <label htmlFor="stressCauses">3. {t('stressCauses')}</label>
                     <input
                         type="text"
                         id="stressCauses"
@@ -1298,7 +1316,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>4. How is your appetite affected by stress? *</label>
+                    <label>4. {t('stressAppetite')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1308,7 +1326,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.stressAppetite === 'increased'}
                                 onChange={handleChange}
                             />
-                            Increased
+                            {language === 'hi' ? 'बढ़ गया' : 'Increased'}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -1318,7 +1336,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.stressAppetite === 'not_affected'}
                                 onChange={handleChange}
                             />
-                            Not affected
+                            {language === 'hi' ? 'प्रभावित नहीं' : 'Not affected'}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -1328,7 +1346,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.stressAppetite === 'decreased'}
                                 onChange={handleChange}
                             />
-                            Decreased
+                            {language === 'hi' ? 'कम हो गया' : 'Decreased'}
                         </label>
                     </div>
                 </div>
@@ -1340,10 +1358,10 @@ export const renderFormSection = (props: FormSectionsProps) => {
     if (currentSection === 8) {
         return (
             <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Weight History</h2>
+                <h2 className={styles.sectionTitle}>{t('weightHistory')}</h2>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="presentWeight">1. What is your present weight?</label>
+                    <label htmlFor="presentWeight">1. {t('presentWeight')}</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <input
                             type="number"
@@ -1363,13 +1381,13 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.presentWeightUnknown || false}
                                 onChange={handleChange}
                             />
-                            Don't know
+                            {t('presentWeightUnknown')}
                         </label>
                     </div>
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. What would you like to do with your weight? *</label>
+                    <label>2. {t('weightGoal')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1379,7 +1397,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.weightGoal === 'lose_weight'}
                                 onChange={handleChange}
                             />
-                            Lose weight
+                            {language === 'hi' ? 'वजन कम करें' : 'Lose weight'}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -1389,7 +1407,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.weightGoal === 'gain_weight'}
                                 onChange={handleChange}
                             />
-                            Gain weight
+                            {language === 'hi' ? 'वजन बढ़ाएं' : 'Gain weight'}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -1399,13 +1417,13 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.weightGoal === 'maintain_weight'}
                                 onChange={handleChange}
                             />
-                            Maintain weight
+                            {language === 'hi' ? 'वजन बनाए रखें' : 'Maintain weight'}
                         </label>
                     </div>
                 </div>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="lowestWeight5Years">3. What was your lowest weight within the past 5 years?</label>
+                    <label htmlFor="lowestWeight5Years">3. {t('lowestWeight5Years')}</label>
                     <input
                         type="number"
                         id="lowestWeight5Years"
@@ -1418,7 +1436,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="highestWeight5Years">4. What was your highest weight within the past 5 years?</label>
+                    <label htmlFor="highestWeight5Years">4. {t('highestWeight5Years')}</label>
                     <input
                         type="number"
                         id="highestWeight5Years"
@@ -1431,7 +1449,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="idealWeight">5. What do you consider to be your ideal weight (the sustainable weight at which you feel best)?</label>
+                    <label htmlFor="idealWeight">5. {t('idealWeight')}</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <input
                             type="number"
@@ -1451,16 +1469,16 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.idealWeightUnknown || false}
                                 onChange={handleChange}
                             />
-                            Don't know
+                            {t('presentWeightUnknown')}
                         </label>
                     </div>
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>6. What are your current waist and hip circumferences?</label>
+                    <label>6. {language === 'hi' ? 'आपकी वर्तमान कमर और कूल्हे की परिधि क्या है?' : 'What are your current waist and hip circumferences?'}</label>
                     <div className={styles.formGrid}>
                         <div className={styles.formGroup}>
-                            <label htmlFor="waistCircumference">Waist:</label>
+                            <label htmlFor="waistCircumference">{t('waistCircumference')}</label>
                             <input
                                 type="number"
                                 id="waistCircumference"
@@ -1473,7 +1491,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                             />
                         </div>
                         <div className={styles.formGroup}>
-                            <label htmlFor="hipCircumference">Hip:</label>
+                            <label htmlFor="hipCircumference">{t('hipCircumference')}</label>
                             <input
                                 type="number"
                                 id="hipCircumference"
@@ -1498,7 +1516,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="bodyComposition">7. What is your current body composition?</label>
+                    <label htmlFor="bodyComposition">7. {t('bodyComposition')}</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <input
                             type="number"
@@ -1510,7 +1528,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                             max="100"
                             step="0.1"
                             style={{ flex: 1 }}
-                            placeholder="% body fat"
+                            placeholder={language === 'hi' ? '% शरीर वसा' : '% body fat'}
                             disabled={formData.bodyCompositionUnknown}
                         />
                         <label className={styles.checkboxLabel} style={{ margin: 0 }}>
@@ -1520,7 +1538,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.bodyCompositionUnknown || false}
                                 onChange={handleChange}
                             />
-                            Don't know
+                            {t('bodyCompositionUnknown')}
                         </label>
                     </div>
                 </div>
@@ -1532,12 +1550,10 @@ export const renderFormSection = (props: FormSectionsProps) => {
     if (currentSection === 9) {
         return (
             <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Goals</h2>
+                <h2 className={styles.sectionTitle}>{t('goals')}</h2>
 
                 <div className={styles.formGroup}>
-                    <label htmlFor="lifestyleAdoptionLikelihood">
-                        1. On a scale of 1 to 10, how likely are you to adopt a healthier lifestyle (1 = very unlikely; 10 = very likely)?
-                    </label>
+                    <label htmlFor="lifestyleAdoptionLikelihood">1. {t('lifestyleAdoptionLikelihood')}</label>
                     <input
                         type="number"
                         id="lifestyleAdoptionLikelihood"
@@ -1550,7 +1566,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. Do you have any specific goals for improving your health? *</label>
+                    <label>2. {t('specificHealthGoals')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1560,7 +1576,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.specificHealthGoals === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -1570,12 +1586,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.specificHealthGoals === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.specificHealthGoals === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="healthGoalsList">If yes, please list them in order of importance:</label>
+                            <label htmlFor="healthGoalsList">{t('healthGoalsList')}</label>
                             <textarea
                                 id="healthGoalsList"
                                 name="healthGoalsList"
@@ -1588,7 +1604,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. Do you have a weight-loss goal? *</label>
+                    <label>3. {t('weightLossGoal')} {t('required')}</label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1598,7 +1614,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.weightLossGoal === 'yes'}
                                 onChange={handleChange}
                             />
-                            Yes
+                            {t('yes')}
                         </label>
                         <label className={styles.radioLabel}>
                             <input
@@ -1608,12 +1624,12 @@ export const renderFormSection = (props: FormSectionsProps) => {
                                 checked={formData.weightLossGoal === 'no'}
                                 onChange={handleChange}
                             />
-                            No
+                            {t('no')}
                         </label>
                     </div>
                     {formData.weightLossGoal === 'yes' && (
                         <div className={styles.formGroupFull} style={{ marginTop: '1rem' }}>
-                            <label htmlFor="weightLossGoalAmount">If yes, what is it?</label>
+                            <label htmlFor="weightLossGoalAmount">{t('weightLossGoalAmount')}</label>
                             <input
                                 type="text"
                                 id="weightLossGoalAmount"
@@ -1626,7 +1642,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label htmlFor="weightLossImportance">4. If you want to lose weight, why is that important to you?</label>
+                    <label htmlFor="weightLossImportance">4. {t('weightLossImportance')}</label>
                     <textarea
                         id="weightLossImportance"
                         name="weightLossImportance"

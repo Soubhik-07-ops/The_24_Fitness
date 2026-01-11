@@ -159,9 +159,12 @@ export async function GET(request: NextRequest) {
             const addonTotal = activeAddons.reduce((sum, addon) => sum + (parseFloat(addon.price) || 0), 0);
 
             // For in-gym plans: if no active in-gym addon exists, add admission fee
+            // EXCEPT for Regular Plans (plan_name contains "regular") - they already include admission in base price
             // If in-gym addon exists, it's already included in addonTotal
             const hasInGymAddon = activeAddons.some(addon => addon.addon_type === 'in_gym');
-            const inGymAdmissionFee = (membership.plan_type === 'in_gym' && !hasInGymAddon) ? inGymAdmissionFeeDefault : 0;
+            const planName = String(membership.plan_name || '').toLowerCase();
+            const isRegularPlan = planName.includes('regular');
+            const inGymAdmissionFee = (membership.plan_type === 'in_gym' && !hasInGymAddon && !isRegularPlan) ? inGymAdmissionFeeDefault : 0;
 
             const totalAmount = basePrice + addonTotal + inGymAdmissionFee;
 

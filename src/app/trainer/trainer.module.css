@@ -171,15 +171,24 @@
     cursor: pointer;
     transition: all 0.3s ease;
     text-decoration: none;
-    color: inherit;
+    color: #111827;
     font-size: 0.875rem;
     font-weight: 500;
+}
+
+.actionButton svg {
+    color: #f97316;
+    transition: color 0.3s ease;
 }
 
 .actionButton:hover {
     border-color: #f97316;
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    color: #f97316;
+}
+
+.actionButton:hover svg {
     color: #f97316;
 }
 
@@ -454,11 +463,13 @@
 @media (min-width: 1024px) {
     .sidebar {
         transform: translateX(0);
-        position: static;
+        position: fixed;
+        left: 0;
+        top: 0;
     }
 
     .mainContent {
-        margin-left: 0;
+        margin-left: 280px;
     }
 
     .menuButton {

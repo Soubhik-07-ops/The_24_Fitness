@@ -32,19 +32,50 @@ export async function PUT(
             return NextResponse.json({ error: 'Invalid chart ID' }, { status: 400 });
         }
 
-        // Verify that this trainer created this chart
+        // Verify that this chart belongs to a membership assigned to this trainer
+        // AND trainer period is active (allows updating admin-uploaded charts after renewal)
         const { data: chart, error: chartError } = await supabaseAdmin
             .from('weekly_charts')
-            .select('*, memberships!inner(id, status)')
+            .select(`
+                *,
+                memberships!inner(
+                    id,
+                    status,
+                    trainer_id,
+                    trainer_assigned,
+                    trainer_period_end
+                )
+            `)
             .eq('id', chartId)
-            .eq('created_by', trainer.id)
             .single();
 
-        if (chartError || !chart) {
+        if (chartError || !chart || !chart.memberships) {
             return NextResponse.json(
-                { error: 'Chart not found or you do not have permission to update it' },
+                { error: 'Chart not found' },
                 { status: 404 }
             );
+        }
+
+        const membership = Array.isArray(chart.memberships) ? chart.memberships[0] : chart.memberships;
+        
+        // Verify trainer is assigned to this membership
+        if (membership.trainer_id !== trainer.id || !membership.trainer_assigned) {
+            return NextResponse.json(
+                { error: 'You are not assigned as trainer for this membership' },
+                { status: 403 }
+            );
+        }
+
+        // Verify trainer period is active (allows managing charts after renewal)
+        if (membership.trainer_period_end) {
+            const periodEnd = new Date(membership.trainer_period_end);
+            const now = new Date();
+            if (periodEnd < now) {
+                return NextResponse.json(
+                    { error: 'Your trainer access period for this membership has expired' },
+                    { status: 403 }
+                );
+            }
         }
 
         const body = await request.json();
@@ -101,19 +132,49 @@ export async function DELETE(
             return NextResponse.json({ error: 'Invalid chart ID' }, { status: 400 });
         }
 
-        // Verify that this trainer created this chart
+        // Verify that this chart belongs to a membership assigned to this trainer
+        // AND trainer period is active (allows deleting admin-uploaded charts after renewal)
         const { data: chart, error: chartError } = await supabaseAdmin
             .from('weekly_charts')
-            .select('id')
+            .select(`
+                id,
+                memberships!inner(
+                    id,
+                    trainer_id,
+                    trainer_assigned,
+                    trainer_period_end
+                )
+            `)
             .eq('id', chartId)
-            .eq('created_by', trainer.id)
             .single();
 
-        if (chartError || !chart) {
+        if (chartError || !chart || !chart.memberships) {
             return NextResponse.json(
-                { error: 'Chart not found or you do not have permission to delete it' },
+                { error: 'Chart not found' },
                 { status: 404 }
             );
+        }
+
+        const membership = Array.isArray(chart.memberships) ? chart.memberships[0] : chart.memberships;
+        
+        // Verify trainer is assigned to this membership
+        if (membership.trainer_id !== trainer.id || !membership.trainer_assigned) {
+            return NextResponse.json(
+                { error: 'You are not assigned as trainer for this membership' },
+                { status: 403 }
+            );
+        }
+
+        // Verify trainer period is active (allows managing charts after renewal)
+        if (membership.trainer_period_end) {
+            const periodEnd = new Date(membership.trainer_period_end);
+            const now = new Date();
+            if (periodEnd < now) {
+                return NextResponse.json(
+                    { error: 'Your trainer access period for this membership has expired' },
+                    { status: 403 }
+                );
+            }
         }
 
         // Delete the chart

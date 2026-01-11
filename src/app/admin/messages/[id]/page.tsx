@@ -31,7 +31,6 @@ export default function AdminChatThreadPage() {
     const [input, setInput] = useState('');
     const [typingUser, setTypingUser] = useState<string | null>(null);
     const [membership, setMembership] = useState<Membership | null>(null);
-    const [renewing, setRenewing] = useState<string | null>(null);
     const listRef = useRef<HTMLDivElement | null>(null);
     const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
     const messageChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -151,79 +150,12 @@ export default function AdminChatThreadPage() {
         await load();
     };
 
-    const handleRenewal = async (renewalType: 'membership' | 'trainer') => {
-        if (!membership) return;
-
-        setRenewing(renewalType);
-        try {
-            const res = await fetch('/api/admin/memberships/renew', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    membershipId: membership.id,
-                    renewalType
-                })
-            });
-
-            const data = await res.json();
-            if (res.ok) {
-                alert(`Successfully renewed ${renewalType === 'membership' ? 'membership' : 'trainer access'}!`);
-                await loadUserMembership();
-                // Send confirmation message to user
-                await fetch(`/api/admin/contact/requests/${requestId}/messages`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        content: `Your ${renewalType === 'membership' ? 'membership' : 'trainer access'} has been renewed successfully. An invoice has been generated and is available in your dashboard.`
-                    })
-                });
-                await load();
-            } else {
-                alert(data.error || 'Failed to renew');
-            }
-        } catch (error) {
-            console.error('Error renewing:', error);
-            alert('An error occurred while processing renewal');
-        } finally {
-            setRenewing(null);
-        }
-    };
 
     return (
         <div className={adminStyles.content}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h1 className={adminStyles.pageTitle}>Chat</h1>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {membership && (
-                        <>
-                            <button
-                                className={adminStyles.retryButton}
-                                onClick={() => handleRenewal('membership')}
-                                disabled={renewing !== null}
-                                style={{
-                                    background: '#3b82f6',
-                                    opacity: renewing === 'membership' ? 0.6 : 1
-                                }}
-                            >
-                                {renewing === 'membership' ? 'Renewing...' : 'Renew Membership'}
-                            </button>
-                            {membership.trainer_assigned && (
-                                <button
-                                    className={adminStyles.retryButton}
-                                    onClick={() => handleRenewal('trainer')}
-                                    disabled={renewing !== null}
-                                    style={{
-                                        background: '#10b981',
-                                        opacity: renewing === 'trainer' ? 0.6 : 1
-                                    }}
-                                >
-                                    {renewing === 'trainer' ? 'Renewing...' : 'Renew Trainer'}
-                                </button>
-                            )}
-                        </>
-                    )}
                     <button className={adminStyles.retryButton} onClick={async () => {
                         if (!confirm('Delete this chat? This will remove all messages.')) return;
                         try {

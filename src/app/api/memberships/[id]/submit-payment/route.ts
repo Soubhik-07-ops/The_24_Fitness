@@ -53,7 +53,7 @@ export async function POST(
         // Verify membership exists and belongs to user
         const { data: membership, error: membershipError } = await supabaseAdmin
             .from('memberships')
-            .select('id, user_id, status, plan_name, plan_type')
+            .select('id, user_id, status, plan_name, plan_type, duration_months')
             .eq('id', membershipId)
             .single()
 
@@ -210,7 +210,8 @@ export async function POST(
                     planName: membership.plan_name,
                     planMode: planMode,
                     hasTrainerAddon: true,
-                    selectedTrainerId: trainerData.id
+                    selectedTrainerId: trainerData.id,
+                    durationMonths: membership.duration_months
                 }
 
                 // Use current date as placeholder - will be updated when admin approves

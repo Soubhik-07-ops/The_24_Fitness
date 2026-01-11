@@ -14,6 +14,7 @@ export interface TrainerAssignmentConfig {
     planMode: string; // 'Online' or 'InGym'
     hasTrainerAddon: boolean;
     selectedTrainerId?: string | null;
+    durationMonths?: number; // membership duration (needed for Regular plans)
 }
 
 /**
@@ -28,45 +29,63 @@ export function calculateTrainerPeriod(
     const periodStart = new Date(membershipStartDate);
 
     let includedDays = 0;
-    let addonDays = 0;
+    let includedMonths = 0;
+    let addonMonths = 0;
     let isIncluded = false;
     let isAddon = false;
 
+    const planLower = planName.toLowerCase();
+
     // Basic Plan: No trainer included, only if addon
-    if (planName.toLowerCase() === 'basic') {
+    if (planLower === 'basic') {
         if (hasTrainerAddon) {
-            addonDays = 30; // 1 month
+            addonMonths = 1; // 1 month
             isAddon = true;
         }
     }
     // Premium Plan: 1 week free + addon if selected
-    else if (planName.toLowerCase() === 'premium') {
+    else if (planLower === 'premium') {
         includedDays = 7; // 1 week free
         isIncluded = true;
         if (hasTrainerAddon) {
-            addonDays = 30; // 1 month addon
+            addonMonths = 1; // 1 month addon
             isAddon = true;
         }
     }
     // Elite Plan: 1 month free + addon if selected
-    else if (planName.toLowerCase() === 'elite') {
-        includedDays = 30; // 1 month free
+    else if (planLower === 'elite') {
+        includedMonths = 1; // 1 month free
         isIncluded = true;
         if (hasTrainerAddon) {
-            addonDays = 30; // 1 month addon
+            addonMonths = 1; // 1 month addon
+            isAddon = true;
+        }
+    }
+    // Any other plan (e.g. "Regular Monthly"): no trainer included, but addon should still grant trainer access.
+    else {
+        if (hasTrainerAddon) {
+            // For Regular plans, trainer addon should match membership validity (duration_months).
+            addonMonths = config.durationMonths && config.durationMonths > 0 ? config.durationMonths : 1;
             isAddon = true;
         }
     }
 
-    const totalDays = includedDays + addonDays;
     const periodEnd = new Date(periodStart);
-    periodEnd.setDate(periodEnd.getDate() + totalDays);
+    // Add included days first (premium trial)
+    if (includedDays > 0) {
+        periodEnd.setDate(periodEnd.getDate() + includedDays);
+    }
+    // Add months (elite free month + addons)
+    const totalMonths = includedMonths + addonMonths;
+    if (totalMonths > 0) {
+        periodEnd.setMonth(periodEnd.getMonth() + totalMonths);
+    }
 
     return {
         periodStart,
         periodEnd,
-        isIncluded: includedDays > 0,
-        isAddon: addonDays > 0
+        isIncluded: includedDays > 0 || includedMonths > 0,
+        isAddon: addonMonths > 0
     };
 }
 
@@ -96,9 +115,12 @@ export async function createTrainerAssignmentRequest(
 
         // For Premium and Elite, if user selected trainer, it's user-requested
         // For Basic, if addon is selected, it's user-requested
-        const requestedByUser = config.planName.toLowerCase() === 'elite' ||
-            (config.planName.toLowerCase() === 'premium' && config.hasTrainerAddon) ||
-            (config.planName.toLowerCase() === 'basic' && config.hasTrainerAddon);
+        const planLower = config.planName.toLowerCase();
+        const requestedByUser = planLower === 'elite' ||
+            (planLower === 'premium' && config.hasTrainerAddon) ||
+            (planLower === 'basic' && config.hasTrainerAddon) ||
+            // Regular/other plans: trainer access is always via addon (user-requested)
+            (config.hasTrainerAddon && planLower !== 'premium' && planLower !== 'elite' && planLower !== 'basic');
 
         // Create trainer assignment record
         const { data: assignment, error: assignmentError } = await supabaseAdmin

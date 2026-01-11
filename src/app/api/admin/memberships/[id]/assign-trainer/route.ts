@@ -86,7 +86,8 @@ export async function POST(
             planName: membership.plan_name,
             planMode: membership.plan_mode || 'Online',
             hasTrainerAddon: hasTrainerAddon,
-            selectedTrainerId: trainerId
+            selectedTrainerId: trainerId,
+            durationMonths: membership.duration_months
         };
 
         const { periodStart, periodEnd } = calculateTrainerPeriod(membershipStartDate, assignmentConfig);
@@ -299,39 +300,6 @@ export async function POST(
                 }
             } else {
                 console.error('[ASSIGN TRAINER] Trainer notification not created - trainerUser:', trainerUser);
-            }
-        }
-
-        // Generate invoice for trainer addon if it exists
-        if (hasTrainerAddon && addons && addons.length > 0) {
-            try {
-                // Get trainer addon price
-                const trainerAddonPrice = addons[0]?.price || 0;
-
-                if (trainerAddonPrice > 0) {
-                    const invoiceResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/invoices/generate`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            membershipId: membershipId,
-                            paymentId: null, // No payment ID for addon assignment
-                            invoiceType: 'trainer_addon',
-                            amount: trainerAddonPrice
-                        })
-                    });
-
-                    if (invoiceResponse.ok) {
-                        const invoiceData = await invoiceResponse.json();
-                        console.log('[ASSIGN TRAINER] Invoice generated for trainer addon:', invoiceData.invoice?.invoiceNumber);
-                    } else {
-                        console.error('[ASSIGN TRAINER] Failed to generate invoice:', await invoiceResponse.text());
-                    }
-                }
-            } catch (invoiceError) {
-                console.error('[ASSIGN TRAINER] Error generating invoice:', invoiceError);
-                // Don't throw - trainer assignment is still successful
             }
         }
 

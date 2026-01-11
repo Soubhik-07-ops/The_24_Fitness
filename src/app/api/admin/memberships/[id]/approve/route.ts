@@ -58,17 +58,14 @@ export async function POST(
             console.log('Admin does not have auth.users entry, verified_by will be null');
         }
 
-        // Check if this is a renewal (has pending renewal payment and status is pending_renewal)
-        const { data: renewalPayment } = await supabaseAdmin
+        // Check if this is a renewal (has multiple verified payments)
+        const { data: allPayments } = await supabaseAdmin
             .from('membership_payments')
             .select('*')
             .eq('membership_id', membershipId)
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
+            .eq('status', 'verified');
 
-        const isRenewal = membership.status === 'pending_renewal' && renewalPayment;
+        const isRenewal = allPayments && allPayments.length > 1;
 
         // Verify payment - for both renewals and new memberships
         // Find the most recent pending payment (could be renewal or initial payment)
@@ -163,7 +160,8 @@ export async function POST(
                 planName: membership.plan_name,
                 planMode: membership.plan_mode || 'Online',
                 hasTrainerAddon: hasTrainerAddon,
-                selectedTrainerId: trainerId
+                selectedTrainerId: trainerId,
+                durationMonths: membership.duration_months
             };
 
             const { periodEnd } = calculateTrainerPeriod(startDate, assignmentConfig);
@@ -308,52 +306,6 @@ export async function POST(
 
         if (activateError) {
             // Don't throw - approval is still successful
-        }
-
-        // Generate invoice for the approved membership
-        try {
-            // Calculate total amount
-            let totalAmount = membership.price || 0;
-
-            // Add admission fee and monthly fee for in-gym plans
-            if (membership.plan_mode === 'in_gym' && !isRenewal) {
-                const { getInGymAdmissionFee } = await import('@/lib/adminSettings');
-                const admissionFee = await getInGymAdmissionFee();
-                totalAmount += admissionFee;
-            } else if (membership.plan_mode === 'in_gym' && isRenewal) {
-                const { getInGymMonthlyFee } = await import('@/lib/adminSettings');
-                const monthlyFee = await getInGymMonthlyFee();
-                totalAmount += monthlyFee;
-            }
-
-            // Add trainer addon price if exists
-            if (hasTrainerAddon && trainerAddon) {
-                totalAmount += trainerAddon.price || 0;
-            }
-
-            const invoiceResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/invoices/generate`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    membershipId: membershipId,
-                    paymentId: pendingPayment?.id || null,
-                    invoiceType: isRenewal ? 'membership_renewal' : 'membership',
-                    amount: totalAmount,
-                    planPrice: membership.price || 0
-                })
-            });
-
-            if (invoiceResponse.ok) {
-                const invoiceData = await invoiceResponse.json();
-                console.log('[APPROVE] Invoice generated successfully:', invoiceData.invoice?.invoiceNumber);
-            } else {
-                console.error('[APPROVE] Failed to generate invoice:', await invoiceResponse.text());
-            }
-        } catch (invoiceError) {
-            console.error('[APPROVE] Error generating invoice:', invoiceError);
-            // Don't throw - membership approval is still successful
         }
 
         // Create notification for user

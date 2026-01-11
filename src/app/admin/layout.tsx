@@ -31,26 +31,26 @@ import styles from './admin.module.css';
 const navigation = [
     // Overview
     { name: 'Dashboard', href: '/admin', icon: BarChart3 },
-    
+
     // User Management
     { name: 'Users', href: '/admin/users', icon: Users },
     { name: 'Trainers', href: '/admin/trainers', icon: User },
     { name: 'Gym Owner', href: '/admin/gym-owner', icon: User },
-    
+
     // Business Operations
     { name: 'Memberships', href: '/admin/memberships', icon: CreditCard },
     { name: 'Offers', href: '/admin/offers', icon: Tag },
-    
+
     // Content Management
     { name: 'Classes', href: '/admin/classes', icon: Calendar },
     { name: 'Reviews', href: '/admin/reviews', icon: MessageSquare },
-    
+
     // Communication
     { name: 'Messages', href: '/admin/messages', icon: MessageSquareDashedIcon },
-    
+
     // Reports & Analytics
     { name: 'Weekly Charts', href: '/admin/weekly-charts', icon: FileText },
-    
+
     // Configuration
     { name: 'Settings', href: '/admin/settings', icon: Settings }
 ];

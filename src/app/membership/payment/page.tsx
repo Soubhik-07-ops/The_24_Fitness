@@ -260,10 +260,12 @@ function PaymentPageContent() {
     }
 
     // Calculate addon prices
-    // For in-gym plans, admission fee is automatically included
-    // For online plans, user can optionally add in-gym addon
+    // IMPORTANT:
+    // - For `in_gym` memberships (Regular Monthly), the membership price already includes joining/admission + 1st month.
+    //   So we must NOT add admission fee again in payment breakdown or total.
+    // - For `online` memberships, user can optionally add in-gym access as an addon (admission fee).
     const isInGymPlan = membership.plan_type === 'in_gym'
-    const inGymAddonPrice = isInGymPlan ? inGymAdmissionFee : (addons.inGym ? inGymAdmissionFee : 0)
+    const inGymAddonPrice = !isInGymPlan && addons.inGym ? inGymAdmissionFee : 0
     const trainerAddonPrice = addons.personalTrainer && addons.selectedTrainer
         ? trainers.find(t => t.id === addons.selectedTrainer)?.price || 0
         : 0
@@ -309,10 +311,11 @@ function PaymentPageContent() {
                             <span className={styles.priceValue}>₹{basePlanPrice.toLocaleString()}</span>
                         </div>
 
-                        {(isInGymPlan || addons.inGym) && (
+                        {/* Only show in-gym admission/addon fee if user selected in-gym as an addon on an online plan */}
+                        {!isInGymPlan && addons.inGym && (
                             <div className={styles.priceRow}>
                                 <span className={styles.priceLabel}>
-                                    {isInGymPlan ? 'In-Gym Admission Fee' : 'In-Gym Add-On (Admission Fee)'}
+                                    In-Gym Add-On (Admission Fee)
                                 </span>
                                 <span className={styles.priceValue}>₹{inGymAddonPrice.toLocaleString()}</span>
                             </div>
@@ -354,18 +357,6 @@ function PaymentPageContent() {
                                         <p className={styles.addonPrice}>₹{inGymAdmissionFee.toLocaleString()} (Admission Fee)</p>
                                     </div>
                                 </label>
-                            </div>
-                        )}
-
-                        {/* Show info for in-gym plans */}
-                        {isInGymPlan && (
-                            <div className={styles.addonCard}>
-                                <div className={styles.addonContent}>
-                                    <h3>In-Gym Training Plan</h3>
-                                    <p>This plan includes gym access with admission fee</p>
-                                    <p className={styles.addonPrice}>Admission Fee: ₹{inGymAdmissionFee.toLocaleString()}</p>
-                                    <p className={styles.addonPrice} style={{ marginTop: '0.5rem' }}>Monthly Fee: ₹{inGymMonthlyFee.toLocaleString()} after first month</p>
-                                </div>
                             </div>
                         )}
 

@@ -6,8 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { type User as SupabaseUser } from '@supabase/supabase-js';
 import styles from './Dashboard.module.css';
-import { Edit3, User, Wifi, WifiOff, Calendar, FileText, CheckCircle, Clock, XCircle, MessageSquare, Download, ArrowRight, TrendingUp, CreditCard, Award, Activity, Bell, Target } from 'lucide-react';
-import InvoiceSection from '@/components/Invoices/InvoiceSection';
+import { Edit3, User, Wifi, WifiOff, Calendar, FileText, CheckCircle, Clock, XCircle, MessageSquare, Download, ArrowRight, TrendingUp, CreditCard, Award, Activity, Bell, Target, Eye, X, ChevronRight } from 'lucide-react';
 
 // ----- Type definitions -----
 interface UserProfile {
@@ -78,6 +77,9 @@ export default function Dashboard() {
     const [membershipHistory, setMembershipHistory] = useState<any>(null);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [addonsExpanded, setAddonsExpanded] = useState(true); // Collapsible state for addons
+    const [selectedChart, setSelectedChart] = useState<WeeklyChart | null>(null);
+    const [showChartModal, setShowChartModal] = useState(false);
+    const [showAllChartsModal, setShowAllChartsModal] = useState(false);
     const router = useRouter();
 
     // Define all fetch functions first (before useEffect hooks that use them)
@@ -266,7 +268,62 @@ export default function Dashboard() {
                                 .select('name')
                                 .eq('id', m.trainer_id)
                                 .single();
-                            return { ...m, trainer_name: trainer?.name || null };
+                            const withTrainer = { ...m, trainer_name: trainer?.name || null };
+
+                            // UI-repair for old Regular Plan trainer periods:
+                            // Previously, "Regular Monthly" wasn't handled in `calculateTrainerPeriod`,
+                            // which could set `trainer_period_end` ~= start date (0 days).
+                            // For Regular plans, trainer addon validity should match membership validity (duration_months).
+                            try {
+                                const planLower = String(withTrainer.plan_name || '').toLowerCase();
+                                const isRegularLike = planLower.includes('regular');
+                                const hasAddon = Boolean(withTrainer.trainer_addon);
+                                const start = withTrainer.membership_start_date || withTrainer.start_date;
+                                if (isRegularLike && hasAddon && start && withTrainer.trainer_period_end) {
+                                    const startDate = new Date(start);
+                                    const endDate = new Date(withTrainer.trainer_period_end);
+                                    const diffDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                                    if (diffDays <= 1) {
+                                        const membershipEnd = withTrainer.membership_end_date || withTrainer.end_date;
+                                        if (membershipEnd) {
+                                            withTrainer.trainer_period_end = new Date(membershipEnd).toISOString();
+                                        } else if (typeof withTrainer.duration_months === 'number' && withTrainer.duration_months > 0) {
+                                            const fixedEnd = new Date(startDate);
+                                            fixedEnd.setMonth(fixedEnd.getMonth() + withTrainer.duration_months);
+                                            withTrainer.trainer_period_end = fixedEnd.toISOString();
+                                        }
+                                    }
+                                }
+                            } catch {
+                                // ignore repair errors; keep original values
+                            }
+
+                            return withTrainer;
+                        }
+                        // Also repair memberships without trainer_name fetch (same issue)
+                        try {
+                            const planLower = String(m.plan_name || '').toLowerCase();
+                            const isRegularLike = planLower.includes('regular');
+                            const hasAddon = Boolean(m.trainer_addon);
+                            const start = m.membership_start_date || m.start_date;
+                            if (isRegularLike && hasAddon && start && m.trainer_period_end) {
+                                const startDate = new Date(start);
+                                const endDate = new Date(m.trainer_period_end);
+                                const diffDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                                if (diffDays <= 1) {
+                                    const membershipEnd = m.membership_end_date || m.end_date;
+                                    if (membershipEnd) {
+                                        return { ...m, trainer_period_end: new Date(membershipEnd).toISOString() };
+                                    }
+                                    if (typeof m.duration_months === 'number' && m.duration_months > 0) {
+                                        const fixedEnd = new Date(startDate);
+                                        fixedEnd.setMonth(fixedEnd.getMonth() + m.duration_months);
+                                        return { ...m, trainer_period_end: fixedEnd.toISOString() };
+                                    }
+                                }
+                            }
+                        } catch {
+                            // ignore
                         }
                         return m;
                     })
@@ -287,17 +344,38 @@ export default function Dashboard() {
 
                 // Fetch charts for ALL active memberships
                 const activeMemberships = membershipsWithTrainers.filter(m => m.status === 'active');
-                if (activeMemberships.length > 0) {
-                    console.log('[DASHBOARD] Found', activeMemberships.length, 'active memberships, fetching charts for all...');
-                    fetchAllWeeklyCharts(activeMemberships.map(m => m.id));
+                // Charts eligibility:
+                // - Regular plans: ONLY if they have trainer addon
+                // - Other plans: Always eligible
+                // IMPORTANT: Online plans can still have in-gym addon (plan_type/plan_mode may become in_gym),
+                // but they still need workout charts. So eligibility is plan-name based.
+                const chartEligibleMemberships = activeMemberships.filter((m: any) => {
+                    const planLower = String(m.plan_name || '').toLowerCase();
+                    const isRegularPlan = planLower.includes('regular');
+                    
+                    // Regular plans: only eligible if they have trainer addon
+                    if (isRegularPlan) {
+                        const hasTrainerAddon = Boolean(m.trainer_addon || m.trainer_id || m.trainer_assigned);
+                        return hasTrainerAddon;
+                    }
+                    
+                    // Other plans: always eligible
+                    return true;
+                });
+
+                if (chartEligibleMemberships.length > 0) {
+                    console.log('[DASHBOARD] Found', chartEligibleMemberships.length, 'chart-eligible active memberships, fetching charts...');
+                    fetchAllWeeklyCharts(chartEligibleMemberships.map(m => m.id));
                 } else {
-                    console.log('[DASHBOARD] No active memberships found');
+                    console.log('[DASHBOARD] No chart-eligible memberships found (Regular plans need trainer addon for charts)');
                     setWeeklyCharts([]);
+                    setChartsLoading(false);
                 }
             } else {
                 setMembership(null);
                 setAllMemberships([]);
                 setWeeklyCharts([]);
+                setChartsLoading(false);
             }
         } catch (error) {
             console.error('Error fetching user membership:', error);
@@ -358,12 +436,26 @@ export default function Dashboard() {
         };
     }, [user, fetchUserMembership]);
 
-    // Real-time subscription for weekly charts (for all active memberships)
-    useEffect(() => {
-        const activeMemberships = allMemberships.filter(m => m.status === 'active');
-        if (activeMemberships.length === 0) return;
+        // Real-time subscription for weekly charts (for all active memberships)
+        useEffect(() => {
+            const activeMemberships = allMemberships.filter(m => m.status === 'active');
+            // Only subscribe for chart-eligible memberships (Regular plans need trainer addon for charts)
+            const chartEligibleMemberships = activeMemberships.filter((m: any) => {
+                const planLower = String(m.plan_name || '').toLowerCase();
+                const isRegularPlan = planLower.includes('regular');
+                
+                // Regular plans: only eligible if they have trainer addon
+                if (isRegularPlan) {
+                    const hasTrainerAddon = Boolean(m.trainer_addon || m.trainer_id || m.trainer_assigned);
+                    return hasTrainerAddon;
+                }
+                
+                // Other plans: always eligible
+                return true;
+            });
+        if (chartEligibleMemberships.length === 0) return;
 
-        const membershipIds = activeMemberships.map(m => m.id);
+        const membershipIds = chartEligibleMemberships.map(m => m.id);
         console.log('[DASHBOARD] Setting up realtime subscriptions for memberships:', membershipIds);
 
         // Create a channel for each active membership
@@ -668,6 +760,71 @@ export default function Dashboard() {
         };
     }, [allMemberships, weeklyCharts, membership, membershipHistory]);
 
+    // Group charts by membership and organize by current/previous plans
+    const organizedCharts = useMemo(() => {
+        const activeMemberships = allMemberships.filter(m => m.status === 'active');
+        const previousMemberships = allMemberships.filter(m => m.status !== 'active');
+
+        // Group charts by membership_id
+        const chartsByMembership = new Map<number, WeeklyChart[]>();
+        weeklyCharts.forEach(chart => {
+            const membershipId = Number(chart.membership_id);
+            if (!chartsByMembership.has(membershipId)) {
+                chartsByMembership.set(membershipId, []);
+            }
+            chartsByMembership.get(membershipId)!.push(chart);
+        });
+
+        // Current plan charts (only current week for active memberships)
+        const currentPlanCharts: { membership: Membership; currentWeekCharts: WeeklyChart[]; allCharts: WeeklyChart[] }[] = [];
+
+        activeMemberships.forEach(membership => {
+            const membershipId = Number(membership.id);
+            const membershipCharts = chartsByMembership.get(membershipId) || [];
+
+            if (membershipCharts.length > 0) {
+                const startDate = membership.membership_start_date || membership.start_date;
+                const currentWeek = calculateCurrentWeek(startDate);
+
+                // Get current week charts
+                const currentWeekCharts = currentWeek
+                    ? membershipCharts.filter(chart => chart.week_number === currentWeek)
+                    : [];
+
+                // Sort all charts by week (descending - newest first)
+                const sortedCharts = [...membershipCharts].sort((a, b) => b.week_number - a.week_number);
+
+                currentPlanCharts.push({
+                    membership,
+                    currentWeekCharts,
+                    allCharts: sortedCharts
+                });
+            }
+        });
+
+        // Previous plan charts (all charts from inactive memberships)
+        const previousPlanCharts: { membership: Membership; charts: WeeklyChart[] }[] = [];
+
+        previousMemberships.forEach(membership => {
+            const membershipId = Number(membership.id);
+            const membershipCharts = chartsByMembership.get(membershipId) || [];
+
+            if (membershipCharts.length > 0) {
+                // Sort charts by week (descending - newest first)
+                const sortedCharts = [...membershipCharts].sort((a, b) => b.week_number - a.week_number);
+                previousPlanCharts.push({
+                    membership,
+                    charts: sortedCharts
+                });
+            }
+        });
+
+        return {
+            currentPlanCharts,
+            previousPlanCharts
+        };
+    }, [allMemberships, weeklyCharts]);
+
     if (loading) {
         return (
             <div className={styles.dashboardContainer}>
@@ -679,7 +836,26 @@ export default function Dashboard() {
     const statusBadge = membership ? getStatusBadge(membership.status) : null;
     const StatusIcon = statusBadge?.icon || Clock;
 
+    // Charts eligibility: Regular plans need trainer addon, other plans always eligible
+    const hasActiveMembership = allMemberships.some(m => m.status === 'active');
+    const hasChartEligibleActiveMembership = allMemberships
+        .filter(m => m.status === 'active')
+        .some((m: any) => {
+            const planLower = String(m.plan_name || '').toLowerCase();
+            const isRegularPlan = planLower.includes('regular');
+            
+            // Regular plans: only eligible if they have trainer addon
+            if (isRegularPlan) {
+                const hasTrainerAddon = Boolean(m.trainer_addon || m.trainer_id || m.trainer_assigned);
+                return hasTrainerAddon;
+            }
+            
+            // Other plans: always eligible
+            return true;
+        });
+
     return (
+        <>
         <div className={styles.dashboardContainer}>
             {/* Profile Header Section */}
             <div className={styles.profileHeader}>
@@ -732,8 +908,12 @@ export default function Dashboard() {
                         <Activity size={24} />
                     </div>
                     <div className={styles.statContent}>
-                        <div className={styles.statValue}>{dashboardStats.totalCharts}</div>
-                        <div className={styles.statLabel}>Total Charts</div>
+                        <div className={styles.statValue}>
+                            {hasChartEligibleActiveMembership ? dashboardStats.totalCharts : 'N/A'}
+                        </div>
+                        <div className={styles.statLabel}>
+                            {hasChartEligibleActiveMembership ? 'Total Charts' : 'Charts'}
+                        </div>
                     </div>
                 </div>
 
@@ -742,8 +922,12 @@ export default function Dashboard() {
                         <Target size={24} />
                     </div>
                     <div className={styles.statContent}>
-                        <div className={styles.statValue}>{dashboardStats.workoutCharts}</div>
-                        <div className={styles.statLabel}>Workout Plans</div>
+                        <div className={styles.statValue}>
+                            {hasChartEligibleActiveMembership ? dashboardStats.workoutCharts : 'N/A'}
+                        </div>
+                        <div className={styles.statLabel}>
+                            {hasChartEligibleActiveMembership ? 'Workout Plans' : 'Workout Plans (Not for Regular)'}
+                        </div>
                     </div>
                 </div>
 
@@ -940,13 +1124,6 @@ export default function Dashboard() {
                                     </div>
                                 </div>
                             )}
-
-                            {/* Invoice Section */}
-                            {membership && membership.status === 'active' && (
-                                <div className={styles.invoiceWrapper}>
-                                    <InvoiceSection membershipId={membership.id} />
-                                </div>
-                            )}
                         </div>
                     )}
                 </div>
@@ -964,16 +1141,32 @@ export default function Dashboard() {
                     </div>
 
                     <div className={styles.cardContent}>
-                        {allMemberships.filter(m => m.status === 'active').length === 0 ? (
+                        {!hasActiveMembership ? (
                             <div className={styles.emptyState}>
                                 <p>Weekly charts will appear here once your membership is activated.</p>
+                            </div>
+                        ) : !hasChartEligibleActiveMembership ? (
+                            <div className={styles.emptyState}>
+                                <p><strong>Charts not available for your current plan.</strong></p>
+                                <p className={styles.emptySubtext}>
+                                    {allMemberships.some((m: any) => {
+                                        const planLower = String(m.plan_name || '').toLowerCase();
+                                        return planLower.includes('regular') && m.status === 'active';
+                                    }) ? (
+                                        <>Regular plans require a trainer addon to receive workout and diet charts. Add a trainer to your membership to get weekly charts.</>
+                                    ) : (
+                                        <>Weekly charts will appear here once your membership is activated.</>
+                                    )}
+                                </p>
                             </div>
                         ) : chartsLoading ? (
                             <p>Loading charts...</p>
                         ) : (
                             <>
                                 {/* Missing Chart Reminders */}
-                                {allMemberships.filter(m => m.status === 'active').map((membership) => {
+                                {allMemberships
+                                    .filter((m: any) => m.status === 'active' && !String(m.plan_name || '').toLowerCase().includes('regular'))
+                                    .map((membership) => {
                                     const nextWeekInfo = getNextWeekNeedingChart(membership);
                                     if (!nextWeekInfo) return null;
                                     return (
@@ -995,35 +1188,85 @@ export default function Dashboard() {
                                     );
                                 })}
 
-                                {weeklyCharts.length === 0 ? (
+                                    {organizedCharts.currentPlanCharts.length === 0 && organizedCharts.previousPlanCharts.length === 0 ? (
                                     <div className={styles.emptyState}>
                                         <p>No weekly charts available yet.</p>
                                         <p className={styles.emptySubtext}>Charts will be uploaded by admin or your trainer.</p>
                                     </div>
                                 ) : (
-                                    <div className={styles.chartsList}>
-                                        {weeklyCharts.slice(0, 10).map((chart) => {
-                                            const chartMembership = allMemberships.find(m => m.id === chart.membership_id);
+                                        <>
+                                            {/* Current Plan - Current Week Charts */}
+                                            {organizedCharts.currentPlanCharts.map(({ membership, currentWeekCharts, allCharts }) => {
+                                                const startDate = membership.membership_start_date || membership.start_date;
+                                                const currentWeek = calculateCurrentWeek(startDate);
+                                                const hasMoreCharts = allCharts.length > currentWeekCharts.length;
+
                                             return (
+                                                    <div key={membership.id} style={{ marginBottom: '2rem' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                                            <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: '#f97316' }}>
+                                                                Current Plan: {membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)}
+                                                                {currentWeek && (
+                                                                    <span style={{ fontSize: '0.875rem', fontWeight: 400, color: '#9ca3af', marginLeft: '0.5rem' }}>
+                                                                        - Week {currentWeek}
+                                                                    </span>
+                                                                )}
+                                                            </h3>
+                                                            {hasMoreCharts && (
+                                                                <button
+                                                                    onClick={() => setShowAllChartsModal(true)}
+                                                                    className={styles.viewAllChartsBtn}
+                                                                >
+                                                                    View All Charts
+                                                                    <ChevronRight size={16} />
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        {currentWeekCharts.length > 0 ? (
+                                                            <div className={styles.chartsList}>
+                                                                {currentWeekCharts.map((chart) => (
                                                 <div key={chart.id} className={styles.chartCard}>
                                                     <div className={styles.chartHeader}>
                                                         <span className={styles.chartWeek}>Week {chart.week_number}</span>
                                                         <span className={styles.chartType}>
                                                             {chart.chart_type === 'workout' ? 'Workout' : 'Diet'}
                                                         </span>
-                                                        {chartMembership && (
-                                                            <span className={styles.planBadge}>
-                                                                {chartMembership.plan_name.charAt(0).toUpperCase() + chartMembership.plan_name.slice(1)}
-                                                            </span>
-                                                        )}
                                                     </div>
                                                     {chart.title && (
                                                         <p className={styles.chartTitle}>{chart.title}</p>
                                                     )}
+                                                                        {chart.content && (
+                                                                            <div className={styles.chartContent} style={{
+                                                                                marginTop: '0.75rem',
+                                                                                fontSize: '0.875rem',
+                                                                                color: '#e5e7eb',
+                                                                                lineHeight: '1.6',
+                                                                                maxHeight: '150px',
+                                                                                overflow: 'hidden',
+                                                                                textOverflow: 'ellipsis',
+                                                                                display: '-webkit-box',
+                                                                                WebkitLineClamp: 4,
+                                                                                WebkitBoxOrient: 'vertical'
+                                                                            }}>
+                                                                                {chart.content}
+                                                                            </div>
+                                                                        )}
                                                     <div className={styles.chartMeta}>
                                                         <span><Calendar size={12} /> {formatDate(chart.created_at)}</span>
                                                         <span>By: {chart.created_by && chart.trainers ? (Array.isArray(chart.trainers) ? chart.trainers[0]?.name : chart.trainers.name) : 'Admin'}</span>
                                                     </div>
+                                                                        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    setSelectedChart(chart);
+                                                                                    setShowChartModal(true);
+                                                                                }}
+                                                                                className={styles.viewChartBtn}
+                                                                            >
+                                                                                <Eye size={14} />
+                                                                                View Chart
+                                                                            </button>
                                                     {chart.file_url && (
                                                         <a
                                                             href={chart.file_url}
@@ -1034,18 +1277,327 @@ export default function Dashboard() {
                                                             <Download size={14} />
                                                             Download
                                                         </a>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : currentWeek ? (
+                                                            <div className={styles.emptyState}>
+                                                                <p>No charts available for Week {currentWeek} yet.</p>
+                                                                {hasMoreCharts && (
+                                                                    <button
+                                                                        onClick={() => setShowAllChartsModal(true)}
+                                                                        className={styles.viewAllChartsBtn}
+                                                                        style={{ marginTop: '1rem' }}
+                                                                    >
+                                                                        View Previous Weeks
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className={styles.emptyState}>
+                                                                <p>Charts will appear here once your membership starts.</p>
+                                                            </div>
                                                     )}
                                                 </div>
                                             );
                                         })}
+
+                                            {/* Previous Plans Charts */}
+                                            {organizedCharts.previousPlanCharts.length > 0 && (
+                                                <div style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                                    <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: '#9ca3af', marginBottom: '1rem' }}>
+                                                        Previous Plans
+                                                    </h3>
+                                                    {organizedCharts.previousPlanCharts.map(({ membership, charts }) => (
+                                                        <div key={membership.id} style={{ marginBottom: '2rem' }}>
+                                                            <h4 style={{ fontSize: '1rem', fontWeight: 600, color: '#d1d5db', marginBottom: '0.75rem' }}>
+                                                                {membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)} Plan
+                                                            </h4>
+                                                            <div className={styles.chartsList}>
+                                                                {charts.map((chart) => (
+                                                                    <div key={chart.id} className={styles.chartCard}>
+                                                                        <div className={styles.chartHeader}>
+                                                                            <span className={styles.chartWeek}>Week {chart.week_number}</span>
+                                                                            <span className={styles.chartType}>
+                                                                                {chart.chart_type === 'workout' ? 'Workout' : 'Diet'}
+                                                                            </span>
+                                                                            <span className={styles.previousPlanBadge}>
+                                                                                {membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)}
+                                                                            </span>
                                     </div>
+                                                                        {chart.title && (
+                                                                            <p className={styles.chartTitle}>{chart.title}</p>
+                                                                        )}
+                                                                        {chart.content && (
+                                                                            <div className={styles.chartContent} style={{
+                                                                                marginTop: '0.75rem',
+                                                                                fontSize: '0.875rem',
+                                                                                color: '#e5e7eb',
+                                                                                lineHeight: '1.6',
+                                                                                maxHeight: '150px',
+                                                                                overflow: 'hidden',
+                                                                                textOverflow: 'ellipsis',
+                                                                                display: '-webkit-box',
+                                                                                WebkitLineClamp: 4,
+                                                                                WebkitBoxOrient: 'vertical'
+                                                                            }}>
+                                                                                {chart.content}
+                                                                            </div>
+                                                                        )}
+                                                                        <div className={styles.chartMeta}>
+                                                                            <span><Calendar size={12} /> {formatDate(chart.created_at)}</span>
+                                                                            <span>By: {chart.created_by && chart.trainers ? (Array.isArray(chart.trainers) ? chart.trainers[0]?.name : chart.trainers.name) : 'Admin'}</span>
+                                                                        </div>
+                                                                        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    setSelectedChart(chart);
+                                                                                    setShowChartModal(true);
+                                                                                }}
+                                                                                className={styles.viewChartBtn}
+                                                                            >
+                                                                                <Eye size={14} />
+                                                                                View Chart
+                                                                            </button>
+                                                                            {chart.file_url && (
+                                                                                <a
+                                                                                    href={chart.file_url}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    className={styles.downloadBtn}
+                                                                                >
+                                                                                    <Download size={14} />
+                                                                                    Download
+                                                                                </a>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </>
                                 )}
                             </>
                         )}
                     </div>
                 </div>
 
+                </div>
+            </div>
+
+            {/* View All Charts Modal */}
+            {showAllChartsModal && (
+                <div
+                    className={styles.chartModalOverlay}
+                    onClick={() => setShowAllChartsModal(false)}
+                >
+                    <div
+                        className={styles.allChartsModal}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className={styles.chartModalHeader}>
+                            <div>
+                                <h2 className={styles.chartModalTitle}>All Weekly Charts</h2>
+                                <p style={{ color: '#9ca3af', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                                    View all charts from your current plan
+                                </p>
+                            </div>
+                            <button
+                                className={styles.chartModalClose}
+                                onClick={() => setShowAllChartsModal(false)}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className={styles.allChartsModalBody}>
+                            {organizedCharts.currentPlanCharts.map(({ membership, allCharts }) => {
+                                const startDate = membership.membership_start_date || membership.start_date;
+                                const currentWeek = calculateCurrentWeek(startDate);
+
+                                // Group charts by week
+                                const chartsByWeek = new Map<number, WeeklyChart[]>();
+                                allCharts.forEach(chart => {
+                                    if (!chartsByWeek.has(chart.week_number)) {
+                                        chartsByWeek.set(chart.week_number, []);
+                                    }
+                                    chartsByWeek.get(chart.week_number)!.push(chart);
+                                });
+
+                                const weeks = Array.from(chartsByWeek.keys()).sort((a, b) => b - a);
+
+                                return (
+                                    <div key={membership.id} style={{ marginBottom: '2rem' }}>
+                                        <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#f97316', marginBottom: '1rem' }}>
+                                            {membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)} Plan
+                                        </h3>
+                                        {weeks.map(weekNumber => {
+                                            const weekCharts = chartsByWeek.get(weekNumber) || [];
+                                            const isCurrentWeek = weekNumber === currentWeek;
+
+                                            return (
+                                                <div key={weekNumber} style={{ marginBottom: '1.5rem' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                                        <h4 style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#d1d5db' }}>
+                                                            Week {weekNumber}
+                                                        </h4>
+                                                        {isCurrentWeek && (
+                                                            <span style={{
+                                                                background: 'rgba(249, 115, 22, 0.2)',
+                                                                color: '#f97316',
+                                                                padding: '0.125rem 0.5rem',
+                                                                borderRadius: '9999px',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 600
+                                                            }}>
+                                                                Current
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                                        {weekCharts.map((chart) => (
+                                                            <div key={chart.id} className={styles.chartCard} style={{ margin: 0 }}>
+                                                                <div className={styles.chartHeader}>
+                                                                    <span className={styles.chartType}>
+                                                                        {chart.chart_type === 'workout' ? 'Workout' : 'Diet'}
+                                                                    </span>
+                                                                </div>
+                                                                {chart.title && (
+                                                                    <p className={styles.chartTitle}>{chart.title}</p>
+                                                                )}
+                                                                <div className={styles.chartMeta}>
+                                                                    <span><Calendar size={12} /> {formatDate(chart.created_at)}</span>
+                                                                    <span>By: {chart.created_by && chart.trainers ? (Array.isArray(chart.trainers) ? chart.trainers[0]?.name : chart.trainers.name) : 'Admin'}</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setSelectedChart(chart);
+                                                                            setShowChartModal(true);
+                                                                            setShowAllChartsModal(false);
+                                                                        }}
+                                                                        className={styles.viewChartBtn}
+                                                                    >
+                                                                        <Eye size={14} />
+                                                                        View Chart
+                                                                    </button>
+                                                                    {chart.file_url && (
+                                                                        <a
+                                                                            href={chart.file_url}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className={styles.downloadBtn}
+                                                                        >
+                                                                            <Download size={14} />
+                                                                            Download
+                                                                        </a>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ))}
             </div>
         </div>
+                                            );
+                                        })}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className={styles.chartModalFooter}>
+                            <button
+                                className={styles.chartModalCloseBtn}
+                                onClick={() => setShowAllChartsModal(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Chart Detail Modal */}
+            {showChartModal && selectedChart && (
+                <div
+                    className={styles.chartModalOverlay}
+                    onClick={() => {
+                        setShowChartModal(false);
+                        setSelectedChart(null);
+                    }}
+                >
+                    <div
+                        className={styles.chartModal}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className={styles.chartModalHeader}>
+                            <div>
+                                <h2 className={styles.chartModalTitle}>
+                                    Week {selectedChart.week_number} - {selectedChart.chart_type === 'workout' ? 'Workout Plan' : 'Diet Plan'}
+                                </h2>
+                                <div className={styles.chartModalMeta}>
+                                    <span><Calendar size={14} /> {formatDate(selectedChart.created_at)}</span>
+                                    <span>•</span>
+                                    <span>By: {selectedChart.created_by && selectedChart.trainers ? (Array.isArray(selectedChart.trainers) ? selectedChart.trainers[0]?.name : selectedChart.trainers.name) : 'Admin'}</span>
+                                </div>
+                            </div>
+                            <button
+                                className={styles.chartModalClose}
+                                onClick={() => {
+                                    setShowChartModal(false);
+                                    setSelectedChart(null);
+                                }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className={styles.chartModalBody}>
+                            {selectedChart.title && (
+                                <h3 className={styles.chartModalContentTitle}>{selectedChart.title}</h3>
+                            )}
+                            {selectedChart.content && (
+                                <div className={styles.chartModalContent}>
+                                    {selectedChart.content.split('\n').map((line, index) => (
+                                        <p key={index} style={{ marginBottom: line.trim() ? '0.75rem' : '0.5rem', whiteSpace: 'pre-wrap' }}>
+                                            {line || '\u00A0'}
+                                        </p>
+                                    ))}
+                                </div>
+                            )}
+                            {!selectedChart.content && (
+                                <div className={styles.chartModalEmpty}>
+                                    <FileText size={48} />
+                                    <p>No content available for this chart.</p>
+                                </div>
+                            )}
+                        </div>
+                        <div className={styles.chartModalFooter}>
+                            {selectedChart.file_url && (
+                                <a
+                                    href={selectedChart.file_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={styles.downloadBtn}
+                                >
+                                    <Download size={16} />
+                                    Download File
+                                </a>
+                            )}
+                            <button
+                                className={styles.chartModalCloseBtn}
+                                onClick={() => {
+                                    setShowChartModal(false);
+                                    setSelectedChart(null);
+                                }}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 }
