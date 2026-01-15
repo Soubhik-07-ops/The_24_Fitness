@@ -1,0 +1,232 @@
+.container {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #0f0f10 0%, #1a1a1f 100%);
+    padding: 2rem 1rem;
+}
+
+.loading,
+.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    gap: 1rem;
+    color: white;
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.header {
+    max-width: 800px;
+    margin: 0 auto 2rem;
+    text-align: center;
+    color: white;
+}
+
+.header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.header p {
+    color: #9ca3af;
+    font-size: 1rem;
+}
+
+.backButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: white;
+    text-decoration: none;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 1rem;
+}
+
+.backButton:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.statusCard,
+.infoCard,
+.priceCard {
+    max-width: 800px;
+    margin: 0 auto 1.5rem;
+    background: #1a1a1f;
+    border: 1px solid #212127;
+    border-radius: 12px;
+    padding: 1.5rem;
+    color: white;
+}
+
+.statusHeader {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.statusHeader h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    color: white;
+}
+
+.statusInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.statusItem {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: #0f0f10;
+    border-radius: 8px;
+}
+
+.statusLabel {
+    color: #9ca3af;
+    font-size: 0.875rem;
+}
+
+.statusValue {
+    color: white;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.infoCard {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.infoCard h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: white;
+}
+
+.infoCard ul {
+    margin: 0;
+    padding-left: 1.5rem;
+    color: #d1d5db;
+    line-height: 1.8;
+}
+
+.infoCard li {
+    margin-bottom: 0.5rem;
+}
+
+.priceCard h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0 0 1rem 0;
+    color: white;
+}
+
+.priceRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #212127;
+    color: #d1d5db;
+}
+
+.priceTotal {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 0 0 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #10b981;
+}
+
+.actions {
+    max-width: 800px;
+    margin: 2rem auto 0;
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+.cancelButton,
+.renewButton {
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+}
+
+.cancelButton {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.cancelButton:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.renewButton {
+    background: #10b981;
+    color: white;
+}
+
+.renewButton:hover {
+    background: #059669;
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+    }
+
+    .header h1 {
+        font-size: 1.5rem;
+    }
+
+    .statusCard,
+    .infoCard,
+    .priceCard {
+        padding: 1rem;
+    }
+
+    .actions {
+        flex-direction: column;
+    }
+
+    .cancelButton,
+    .renewButton {
+        width: 100%;
+    }
+}
+

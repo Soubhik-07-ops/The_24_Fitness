@@ -50,7 +50,26 @@ export function getChartResponsibility(config: ChartResponsibilityConfig): Chart
                 canAdminUpload: false
             };
         }
+        
+        // CRITICAL: For Regular Monthly plans, trainer access expires with membership expiry
+        // Check if membership has expired - if so, no chart access
+        if (membershipEndDate) {
+            const membershipEnd = typeof membershipEndDate === 'string' ? new Date(membershipEndDate) : membershipEndDate;
+            const now = currentDate || new Date();
+            
+            // If membership has expired, trainer has no chart access (even if trainer_period_end hasn't passed)
+            if (membershipEnd <= now) {
+                return {
+                    shouldUpload: 'none',
+                    reason: 'Regular Monthly membership has expired. Trainer access and chart uploads are no longer available. Please renew membership and add trainer access as an addon.',
+                    canTrainerUpload: false,
+                    canAdminUpload: false
+                };
+            }
+        }
+        
         // Regular with trainer addon: Trainer uploads workout+diet for entire period (1 month)
+        // Only if membership hasn't expired
         if (trainerPeriodEnd && currentDate <= trainerPeriodEnd) {
             return {
                 shouldUpload: 'trainer',

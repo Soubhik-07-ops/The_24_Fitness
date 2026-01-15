@@ -31,20 +31,41 @@ export async function GET(
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }
 
-        // Check if user has an active membership with this trainer assigned
-        const { data: activeMembership } = await supabaseAdmin
+        // Check trainer messaging access before allowing message retrieval
+        // Strictly enforce access control - users can only read messages when access is active
+        // For Regular Monthly plans, also check membership expiry
+        const { data: membershipData } = await supabaseAdmin
             .from('memberships')
-            .select('id, trainer_id, trainer_assigned, trainer_period_end, status')
+            .select('id, trainer_id, trainer_period_end, trainer_grace_period_end, membership_end_date, end_date, plan_name')
             .eq('user_id', user.id)
             .eq('trainer_id', trainerId)
-            .eq('trainer_assigned', true)
-            .eq('status', 'active')
-            .gt('trainer_period_end', new Date().toISOString())
             .limit(1)
-            .single();
+            .maybeSingle();
 
-        // Allow reading messages even if trainer period expired (for viewing existing conversation)
-        // But restrict sending messages (handled in POST)
+        // Import and use the access control utility
+        const { checkTrainerMessagingAccess } = await import('@/lib/trainerMessagingAccess');
+        const accessStatus = membershipData ? checkTrainerMessagingAccess(
+            membershipData.trainer_period_end,
+            membershipData.trainer_grace_period_end,
+            undefined, // Use real current date for API checks
+            membershipData.membership_end_date || membershipData.end_date || null,
+            membershipData.plan_name
+        ) : {
+            canMessage: false,
+            isActive: false,
+            isExpired: true,
+            isInGracePeriod: false,
+            reason: 'You do not have an assigned trainer. Please contact admin or purchase trainer access.',
+            gracePeriodDaysRemaining: null
+        };
+
+        // Strictly reject if access is not active (users shouldn't access messages when access expired)
+        if (!accessStatus.canMessage) {
+            return NextResponse.json(
+                { error: accessStatus.reason, messages: [] },
+                { status: 403 }
+            );
+        }
 
         const { data: messages, error } = await supabaseAdmin
             .from('trainer_messages')
@@ -115,39 +136,37 @@ export async function POST(
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }
 
-        // Check if user has an active membership with this trainer assigned and trainer period is active
-        const { data: activeMembership, error: membershipError } = await supabaseAdmin
+        // Check trainer messaging access based on trainer access validity
+        // For Regular Monthly plans, also check membership expiry (trainer access expires with membership)
+        const { data: membershipData } = await supabaseAdmin
             .from('memberships')
-            .select('id, trainer_id, trainer_assigned, trainer_period_end, status, plan_name')
+            .select('id, trainer_id, trainer_period_end, trainer_grace_period_end, membership_end_date, end_date, plan_name')
             .eq('user_id', user.id)
             .eq('trainer_id', trainerId)
-            .eq('trainer_assigned', true)
-            .eq('status', 'active')
-            .gt('trainer_period_end', new Date().toISOString())
             .limit(1)
-            .single();
+            .maybeSingle();
 
-        if (membershipError || !activeMembership) {
-            // Check if membership exists but trainer period expired
-            const { data: expiredMembership } = await supabaseAdmin
-                .from('memberships')
-                .select('id, trainer_period_end')
-                .eq('user_id', user.id)
-                .eq('trainer_id', trainerId)
-                .eq('trainer_assigned', true)
-                .eq('status', 'active')
-                .limit(1)
-                .single();
+        // Import and use the access control utility
+        const { checkTrainerMessagingAccess } = await import('@/lib/trainerMessagingAccess');
+        const accessStatus = membershipData ? checkTrainerMessagingAccess(
+            membershipData.trainer_period_end,
+            membershipData.trainer_grace_period_end,
+            undefined, // Use real current date for API checks
+            membershipData.membership_end_date || membershipData.end_date || null,
+            membershipData.plan_name
+        ) : {
+            canMessage: false,
+            isActive: false,
+            isExpired: true,
+            isInGracePeriod: false,
+            reason: 'You do not have an assigned trainer. Please contact admin or purchase trainer access.',
+            gracePeriodDaysRemaining: null
+        };
 
-            if (expiredMembership) {
-                return NextResponse.json(
-                    { error: 'Your trainer access period has expired. Please renew your trainer access to continue messaging.' },
-                    { status: 403 }
-                );
-            }
-
+        // Strictly reject if access is not active (includes expired and grace period cases)
+        if (!accessStatus.canMessage) {
             return NextResponse.json(
-                { error: 'You can only message trainers when you have an active membership with trainer access assigned.' },
+                { error: accessStatus.reason },
                 { status: 403 }
             );
         }

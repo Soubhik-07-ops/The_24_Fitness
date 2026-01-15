@@ -1,7 +1,7 @@
 // src/app/trainer/layout.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -37,6 +37,31 @@ export default function TrainerLayout({
     const { trainer, loading, signOut } = useTrainerAuth();
     const router = useRouter();
     const unreadCount = useTrainerUnreadCount();
+
+    // Fix for zoom background issue - ensure body/html background matches trainer panel
+    useEffect(() => {
+        // Add class to body/html for trainer route styling
+        document.body.classList.add('trainerRoute');
+        document.documentElement.classList.add('trainerRoute');
+        
+        // Force body/html background to match trainer panel (prevents black background when zooming)
+        const originalBodyBg = document.body.style.background;
+        const originalHtmlBg = document.documentElement.style.background;
+        const originalBodyColor = document.body.style.color;
+        
+        document.body.style.background = '#f8fafc';
+        document.documentElement.style.background = '#f8fafc';
+        document.body.style.color = '#111827';
+        
+        return () => {
+            // Cleanup on unmount
+            document.body.classList.remove('trainerRoute');
+            document.documentElement.classList.remove('trainerRoute');
+            document.body.style.background = originalBodyBg;
+            document.documentElement.style.background = originalHtmlBg;
+            document.body.style.color = originalBodyColor;
+        };
+    }, []);
 
     // If on login page, don't show the trainer layout
     if (pathname === '/trainer/login') {

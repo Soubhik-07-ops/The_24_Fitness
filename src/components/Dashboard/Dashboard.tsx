@@ -6,7 +6,11 @@ import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { type User as SupabaseUser } from '@supabase/supabase-js';
 import styles from './Dashboard.module.css';
-import { Edit3, User, Wifi, WifiOff, Calendar, FileText, CheckCircle, Clock, XCircle, MessageSquare, Download, ArrowRight, TrendingUp, CreditCard, Award, Activity, Bell, Target, Eye, X, ChevronRight } from 'lucide-react';
+import { Edit3, User, Wifi, WifiOff, Calendar, FileText, CheckCircle, Clock, XCircle, MessageSquare, Download, ArrowRight, TrendingUp, CreditCard, Award, Activity, Bell, Target, Eye, X, ChevronRight, Receipt } from 'lucide-react';
+import { getMembershipExpirationStatus as getMembershipExpirationStatusUtil, getTrainerPeriodExpirationStatus as getTrainerPeriodExpirationStatusUtil } from '@/lib/membershipUtils';
+import { isInGracePeriod, getGracePeriodDaysRemaining } from '@/lib/gracePeriod';
+import { isTrainerInGracePeriod, getTrainerGracePeriodDaysRemaining } from '@/lib/trainerGracePeriod';
+import { checkTrainerMessagingAccess } from '@/lib/trainerMessagingAccess';
 
 // ----- Type definitions -----
 interface UserProfile {
@@ -32,6 +36,8 @@ interface Membership {
     membership_start_date?: string | null;
     membership_end_date?: string | null;
     trainer_name?: string | null;
+    grace_period_end?: string | null;
+    trainer_grace_period_end?: string | null;
 }
 
 interface WeeklyChart {
@@ -76,6 +82,8 @@ export default function Dashboard() {
     const [isOnline, setIsOnline] = useState(true);
     const [membershipHistory, setMembershipHistory] = useState<any>(null);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    const [invoices, setInvoices] = useState<any[]>([]);
+    const [loadingInvoices, setLoadingInvoices] = useState(false);
     const [addonsExpanded, setAddonsExpanded] = useState(true); // Collapsible state for addons
     const [selectedChart, setSelectedChart] = useState<WeeklyChart | null>(null);
     const [showChartModal, setShowChartModal] = useState(false);
@@ -118,6 +126,35 @@ export default function Dashboard() {
             console.error('Error fetching membership history:', error);
         } finally {
             setLoadingHistory(false);
+        }
+    }, []);
+
+    const fetchInvoices = useCallback(async (membershipId: number) => {
+        setLoadingInvoices(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                setLoadingInvoices(false);
+                return;
+            }
+
+            const response = await fetch(`/api/memberships/${membershipId}/invoices`, {
+                credentials: 'include',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setInvoices(data.invoices || []);
+            } else {
+                console.error('Error fetching invoices:', await response.json());
+            }
+        } catch (error) {
+            console.error('Error fetching invoices:', error);
+        } finally {
+            setLoadingInvoices(false);
         }
     }, []);
 
@@ -246,12 +283,12 @@ export default function Dashboard() {
     const fetchUserMembership = useCallback(async (userId: string) => {
         try {
             setMembershipLoading(true);
-            // Get ALL active memberships (not just one)
+            // Get ALL active memberships (not just one) - include grace_period for renewals
             const { data: memberships, error } = await supabase
                 .from('memberships')
                 .select('*')
                 .eq('user_id', userId)
-                .in('status', ['pending', 'active'])
+                .in('status', ['pending', 'active', 'grace_period'])
                 .order('created_at', { ascending: false });
 
             if (error) {
@@ -337,6 +374,7 @@ export default function Dashboard() {
                 // Fetch membership history (this will also set addons from history - includes all addons from renewals)
                 if (primaryMembership.id) {
                     fetchMembershipHistory(primaryMembership.id);
+                    fetchInvoices(primaryMembership.id);
                 } else {
                     // Fallback: fetch addons directly if no membership ID
                     fetchMembershipAddons(primaryMembership.id);
@@ -352,13 +390,13 @@ export default function Dashboard() {
                 const chartEligibleMemberships = activeMemberships.filter((m: any) => {
                     const planLower = String(m.plan_name || '').toLowerCase();
                     const isRegularPlan = planLower.includes('regular');
-                    
+
                     // Regular plans: only eligible if they have trainer addon
                     if (isRegularPlan) {
                         const hasTrainerAddon = Boolean(m.trainer_addon || m.trainer_id || m.trainer_assigned);
                         return hasTrainerAddon;
                     }
-                    
+
                     // Other plans: always eligible
                     return true;
                 });
@@ -382,7 +420,7 @@ export default function Dashboard() {
         } finally {
             setMembershipLoading(false);
         }
-    }, [fetchMembershipHistory, fetchMembershipAddons, fetchAllWeeklyCharts]);
+    }, [fetchMembershipHistory, fetchMembershipAddons, fetchAllWeeklyCharts, fetchInvoices]);
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -436,23 +474,23 @@ export default function Dashboard() {
         };
     }, [user, fetchUserMembership]);
 
-        // Real-time subscription for weekly charts (for all active memberships)
-        useEffect(() => {
-            const activeMemberships = allMemberships.filter(m => m.status === 'active');
-            // Only subscribe for chart-eligible memberships (Regular plans need trainer addon for charts)
-            const chartEligibleMemberships = activeMemberships.filter((m: any) => {
-                const planLower = String(m.plan_name || '').toLowerCase();
-                const isRegularPlan = planLower.includes('regular');
-                
-                // Regular plans: only eligible if they have trainer addon
-                if (isRegularPlan) {
-                    const hasTrainerAddon = Boolean(m.trainer_addon || m.trainer_id || m.trainer_assigned);
-                    return hasTrainerAddon;
-                }
-                
-                // Other plans: always eligible
-                return true;
-            });
+    // Real-time subscription for weekly charts (for all active memberships)
+    useEffect(() => {
+        const activeMemberships = allMemberships.filter(m => m.status === 'active');
+        // Only subscribe for chart-eligible memberships (Regular plans need trainer addon for charts)
+        const chartEligibleMemberships = activeMemberships.filter((m: any) => {
+            const planLower = String(m.plan_name || '').toLowerCase();
+            const isRegularPlan = planLower.includes('regular');
+
+            // Regular plans: only eligible if they have trainer addon
+            if (isRegularPlan) {
+                const hasTrainerAddon = Boolean(m.trainer_addon || m.trainer_id || m.trainer_assigned);
+                return hasTrainerAddon;
+            }
+
+            // Other plans: always eligible
+            return true;
+        });
         if (chartEligibleMemberships.length === 0) return;
 
         const membershipIds = chartEligibleMemberships.map(m => m.id);
@@ -673,53 +711,49 @@ export default function Dashboard() {
         return null;
     }, [weeklyCharts, chartsLoading]);
 
-    // Check if membership is expiring soon or expired
-    const getMembershipExpirationStatus = (membership: Membership): {
-        isExpiringSoon: boolean;
-        isExpired: boolean;
-        daysRemaining: number | null
-    } => {
-        const endDateStr = membership.membership_end_date || membership.end_date;
-        if (!endDateStr) {
-            return { isExpiringSoon: false, isExpired: false, daysRemaining: null };
-        }
+    // Calculate grace period data for membership
+    const membershipGracePeriodData = useMemo(() => {
+        if (!membership) return { isInGracePeriod: false, daysRemaining: null };
 
-        const endDate = new Date(endDateStr);
+        const gracePeriodEnd = membership.grace_period_end ?? null;
+        const endDate = membership.end_date || membership.membership_end_date || null;
         const now = new Date();
-        const diffTime = endDate.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        if (diffDays < 0) {
-            return { isExpiringSoon: false, isExpired: true, daysRemaining: Math.abs(diffDays) };
-        } else if (diffDays <= 4) {
-            return { isExpiringSoon: true, isExpired: false, daysRemaining: diffDays };
-        }
+        // Grace period should only show if:
+        // 1. Status is 'grace_period'
+        // 2. grace_period_end exists and is in the future
+        // 3. Membership end_date has actually passed (expired)
+        const hasExpired = endDate ? new Date(endDate) <= now : false;
+        const isInMembershipGracePeriod = membership.status === 'grace_period' &&
+            gracePeriodEnd &&
+            new Date(gracePeriodEnd) >= now &&
+            hasExpired;
 
-        return { isExpiringSoon: false, isExpired: false, daysRemaining: diffDays };
+        // Calculate grace period days remaining - same logic as renew page
+        const gracePeriodDaysRemaining = isInMembershipGracePeriod && gracePeriodEnd
+            ? getGracePeriodDaysRemaining(gracePeriodEnd, now)
+            : null;
+
+        return {
+            isInGracePeriod: isInMembershipGracePeriod,
+            daysRemaining: gracePeriodDaysRemaining
+        };
+    }, [membership]);
+
+    // Check if membership is expiring soon or expired
+    const getMembershipExpirationStatus = (membership: Membership) => {
+        const endDateStr = membership.membership_end_date || membership.end_date;
+        const now = new Date();
+        return getMembershipExpirationStatusUtil(endDateStr, now);
     };
 
     // Check if trainer period is expiring soon or expired
-    const getTrainerPeriodExpirationStatus = (membership: Membership): {
-        isExpiringSoon: boolean;
-        isExpired: boolean;
-        daysRemaining: number | null
-    } => {
-        if (!membership.trainer_period_end || !membership.trainer_assigned) {
+    const getTrainerPeriodExpirationStatus = (membership: Membership) => {
+        if (!membership.trainer_assigned) {
             return { isExpiringSoon: false, isExpired: false, daysRemaining: null };
         }
-
-        const endDate = new Date(membership.trainer_period_end);
         const now = new Date();
-        const diffTime = endDate.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (diffDays < 0) {
-            return { isExpiringSoon: false, isExpired: true, daysRemaining: Math.abs(diffDays) };
-        } else if (diffDays <= 4) {
-            return { isExpiringSoon: true, isExpired: false, daysRemaining: diffDays };
-        }
-
-        return { isExpiringSoon: false, isExpired: false, daysRemaining: diffDays };
+        return getTrainerPeriodExpirationStatusUtil(membership.trainer_period_end, now);
     };
 
     const getStatusBadge = (status: string) => {
@@ -843,357 +877,560 @@ export default function Dashboard() {
         .some((m: any) => {
             const planLower = String(m.plan_name || '').toLowerCase();
             const isRegularPlan = planLower.includes('regular');
-            
+
             // Regular plans: only eligible if they have trainer addon
             if (isRegularPlan) {
                 const hasTrainerAddon = Boolean(m.trainer_addon || m.trainer_id || m.trainer_assigned);
                 return hasTrainerAddon;
             }
-            
+
             // Other plans: always eligible
             return true;
         });
 
     return (
         <>
-        <div className={styles.dashboardContainer}>
-            {/* Profile Header Section */}
-            <div className={styles.profileHeader}>
-                <div className={styles.profileInfo}>
-                    <div className={styles.avatarContainer}>
-                        {userProfile?.avatar_url ? (
-                            <img
-                                src={userProfile.avatar_url}
-                                alt="Profile"
-                                className={styles.avatar}
-                            />
-                        ) : (
-                            <div className={styles.avatarPlaceholder}>
-                                <User size={32} />
-                            </div>
-                        )}
-                    </div>
-                    <div className={styles.profileText}>
-                        <h1 className={styles.welcomeTitle}>
-                            Welcome back, <span className={styles.gradientText}>
-                                {userProfile?.full_name || user?.email?.split('@')[0] || 'Member'}
-                            </span>
-                        </h1>
-                        <p className={styles.welcomeSubtitle}>
-                            This is your personal member dashboard. Manage your membership and track your progress.
-                            {isOnline && <span className={styles.liveBadge}> • Live Updates</span>}
-                        </p>
-                    </div>
-                </div>
-                <a href="/profile" className={styles.editProfileButton}>
-                    <Edit3 size={18} />
-                    Edit Profile
-                </a>
-            </div>
-
-            {/* Overview Stats Cards */}
-            <div className={styles.statsGrid}>
-                <div className={styles.statCard}>
-                    <div className={styles.statIcon} style={{ background: 'rgba(249, 115, 22, 0.1)', color: '#f97316' }}>
-                        <Award size={24} />
-                    </div>
-                    <div className={styles.statContent}>
-                        <div className={styles.statValue}>{membership ? membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1) : 'None'}</div>
-                        <div className={styles.statLabel}>Current Plan</div>
-                    </div>
-                </div>
-
-                <div className={styles.statCard}>
-                    <div className={styles.statIcon} style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
-                        <Activity size={24} />
-                    </div>
-                    <div className={styles.statContent}>
-                        <div className={styles.statValue}>
-                            {hasChartEligibleActiveMembership ? dashboardStats.totalCharts : 'N/A'}
-                        </div>
-                        <div className={styles.statLabel}>
-                            {hasChartEligibleActiveMembership ? 'Total Charts' : 'Charts'}
-                        </div>
-                    </div>
-                </div>
-
-                <div className={styles.statCard}>
-                    <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>
-                        <Target size={24} />
-                    </div>
-                    <div className={styles.statContent}>
-                        <div className={styles.statValue}>
-                            {hasChartEligibleActiveMembership ? dashboardStats.workoutCharts : 'N/A'}
-                        </div>
-                        <div className={styles.statLabel}>
-                            {hasChartEligibleActiveMembership ? 'Workout Plans' : 'Workout Plans (Not for Regular)'}
-                        </div>
-                    </div>
-                </div>
-
-                <div className={styles.statCard}>
-                    <div className={styles.statIcon} style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}>
-                        <CreditCard size={24} />
-                    </div>
-                    <div className={styles.statContent}>
-                        <div className={styles.statValue}>₹{dashboardStats.totalPaid.toLocaleString()}</div>
-                        <div className={styles.statLabel}>Total Paid</div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Main Content Grid */}
-            <div className={styles.mainGrid}>
-                {/* Membership Card */}
-                <div className={styles.card}>
-                    <div className={styles.cardHeader}>
-                        <div className={styles.cardTitle}>
-                            <Award size={20} />
-                            <h3>My Membership</h3>
-                        </div>
-                        {membership && (
-                            <a href="/membership/my-plans" className={styles.cardAction}>
-                                View All <ArrowRight size={16} />
-                            </a>
-                        )}
-                    </div>
-
-                    {membershipLoading ? (
-                        <div className={styles.cardContent}>
-                            <p>Loading membership...</p>
-                        </div>
-                    ) : !membership ? (
-                        <div className={styles.cardContent}>
-                            <div className={styles.emptyState}>
-                                <p>You don't have an active membership yet.</p>
-                                <a href="/membership" className={styles.primaryButton}>
-                                    Choose a Plan
-                                </a>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className={styles.cardContent}>
-                            {/* Expiration Warnings */}
-                            {(() => {
-                                const expirationStatus = getMembershipExpirationStatus(membership);
-                                if (expirationStatus.isExpired) {
-                                    return (
-                                        <div className={styles.alertCard} style={{ background: '#fee2e2', borderColor: '#dc2626' }}>
-                                            <XCircle size={20} style={{ color: '#dc2626' }} />
-                                            <div>
-                                                <div className={styles.alertTitle} style={{ color: '#dc2626' }}>Membership Expired</div>
-                                                <div className={styles.alertText}>
-                                                    Your membership expired {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''} ago. <a href="/contact">Contact us</a> to renew.
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                } else if (expirationStatus.isExpiringSoon) {
-                                    return (
-                                        <div className={styles.alertCard} style={{ background: '#fef3c7', borderColor: '#f59e0b' }}>
-                                            <Clock size={20} style={{ color: '#f59e0b' }} />
-                                            <div>
-                                                <div className={styles.alertTitle} style={{ color: '#f59e0b' }}>Expiring Soon</div>
-                                                <div className={styles.alertText}>
-                                                    Your membership expires in {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''}.
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            })()}
-
-                            {membership.trainer_assigned && (() => {
-                                const trainerExpiration = getTrainerPeriodExpirationStatus(membership);
-                                if (trainerExpiration.isExpired) {
-                                    return (
-                                        <div className={styles.alertCard} style={{ background: '#fee2e2', borderColor: '#dc2626' }}>
-                                            <XCircle size={20} style={{ color: '#dc2626' }} />
-                                            <div>
-                                                <div className={styles.alertTitle} style={{ color: '#dc2626' }}>Trainer Access Expired</div>
-                                                <div className={styles.alertText}>
-                                                    Your trainer access has expired. <a href="/contact">Contact us</a> to renew.
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                } else if (trainerExpiration.isExpiringSoon) {
-                                    return (
-                                        <div className={styles.alertCard} style={{ background: '#fef3c7', borderColor: '#f59e0b' }}>
-                                            <Clock size={20} style={{ color: '#f59e0b' }} />
-                                            <div>
-                                                <div className={styles.alertTitle} style={{ color: '#f59e0b' }}>Trainer Access Expiring</div>
-                                                <div className={styles.alertText}>
-                                                    Trainer access expires in {trainerExpiration.daysRemaining} day{trainerExpiration.daysRemaining !== 1 ? 's' : ''}.
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            })()}
-
-                            {/* Membership Details */}
-                            <div className={styles.infoGrid}>
-                                <div className={styles.infoItem}>
-                                    <span className={styles.infoLabel}>Plan</span>
-                                    <span className={styles.infoValue}>{membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)}</span>
-                                </div>
-                                <div className={styles.infoItem}>
-                                    <span className={styles.infoLabel}>Status</span>
-                                    <span className={`${styles.statusBadge} ${statusBadge?.className || ''}`}>
-                                        <StatusIcon size={14} />
-                                        {statusBadge?.text}
-                                    </span>
-                                </div>
-                                <div className={styles.infoItem}>
-                                    <span className={styles.infoLabel}>Duration</span>
-                                    <span className={styles.infoValue}>{membership.duration_months} Months</span>
-                                </div>
-                                <div className={styles.infoItem}>
-                                    <span className={styles.infoLabel}>Price</span>
-                                    <span className={styles.infoValue}>₹{membership.price.toLocaleString()}</span>
-                                </div>
-                                {membership.membership_start_date && (
-                                    <div className={styles.infoItem}>
-                                        <span className={styles.infoLabel}>Start Date</span>
-                                        <span className={styles.infoValue}>{formatDate(membership.membership_start_date)}</span>
-                                    </div>
-                                )}
-                                {membership.membership_end_date && (
-                                    <div className={styles.infoItem}>
-                                        <span className={styles.infoLabel}>End Date</span>
-                                        <span className={styles.infoValue}>
-                                            {formatDate(membership.membership_end_date)}
-                                            {(() => {
-                                                const expirationStatus = getMembershipExpirationStatus(membership);
-                                                if (expirationStatus.daysRemaining !== null) {
-                                                    return <span className={styles.daysRemaining} style={{ color: expirationStatus.isExpired ? '#dc2626' : expirationStatus.isExpiringSoon ? '#f59e0b' : '#6b7280' }}>
-                                                        ({expirationStatus.daysRemaining} days {expirationStatus.isExpired ? 'ago' : 'remaining'})
-                                                    </span>;
-                                                }
-                                                return null;
-                                            })()}
-                                        </span>
-                                    </div>
-                                )}
-                                {membership.trainer_assigned && membership.trainer_id && (
-                                    <>
-                                        <div className={styles.infoItem}>
-                                            <span className={styles.infoLabel}>Trainer</span>
-                                            <span className={styles.infoValue}>
-                                                {membership.trainer_name || 'N/A'}
-                                                <a href={`/messages/trainer/${membership.trainer_id}`} className={styles.messageLink}>
-                                                    <MessageSquare size={14} />
-                                                    Message
-                                                </a>
-                                            </span>
-                                        </div>
-                                        {membership.trainer_period_end && (
-                                            <div className={styles.infoItem}>
-                                                <span className={styles.infoLabel}>Trainer Access Until</span>
-                                                <span className={styles.infoValue}>
-                                                    {formatDate(membership.trainer_period_end)}
-                                                    {(() => {
-                                                        const trainerExpiration = getTrainerPeriodExpirationStatus(membership);
-                                                        if (trainerExpiration.daysRemaining !== null) {
-                                                            return <span className={styles.daysRemaining} style={{ color: trainerExpiration.isExpired ? '#dc2626' : trainerExpiration.isExpiringSoon ? '#f59e0b' : '#6b7280' }}>
-                                                                ({trainerExpiration.daysRemaining} days {trainerExpiration.isExpired ? 'ago' : 'remaining'})
-                                                            </span>;
-                                                        }
-                                                        return null;
-                                                    })()}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-
-                            {/* Payment Summary */}
-                            {membershipHistory?.financialSummary && (
-                                <div className={styles.paymentSummary}>
-                                    <div className={styles.paymentItem}>
-                                        <span>Total Paid</span>
-                                        <span className={styles.paymentAmount}>₹{membershipHistory.financialSummary.totalPaid.toLocaleString()}</span>
-                                    </div>
-                                    <div className={styles.paymentItem}>
-                                        <span>Pending</span>
-                                        <span className={styles.paymentPending}>₹{membershipHistory.financialSummary.pendingAmount.toLocaleString()}</span>
-                                    </div>
+            <div className={styles.dashboardContainer}>
+                {/* Profile Header Section */}
+                <div className={styles.profileHeader}>
+                    <div className={styles.profileInfo}>
+                        <div className={styles.avatarContainer}>
+                            {userProfile?.avatar_url ? (
+                                <img
+                                    src={userProfile.avatar_url}
+                                    alt="Profile"
+                                    className={styles.avatar}
+                                />
+                            ) : (
+                                <div className={styles.avatarPlaceholder}>
+                                    <User size={32} />
                                 </div>
                             )}
                         </div>
-                    )}
+                        <div className={styles.profileText}>
+                            <h1 className={styles.welcomeTitle}>
+                                Welcome back, <span className={styles.gradientText}>
+                                    {userProfile?.full_name || user?.email?.split('@')[0] || 'Member'}
+                                </span>
+                            </h1>
+                            <p className={styles.welcomeSubtitle}>
+                                This is your personal member dashboard. Manage your membership and track your progress.
+                                {isOnline && <span className={styles.liveBadge}> • Live Updates</span>}
+                            </p>
+                        </div>
+                    </div>
+                    <a href="/profile" className={styles.editProfileButton}>
+                        <Edit3 size={18} />
+                        Edit Profile
+                    </a>
                 </div>
 
-                {/* Weekly Charts Card */}
-                <div className={styles.card}>
-                    <div className={styles.cardHeader}>
-                        <div className={styles.cardTitle}>
-                            <FileText size={20} />
-                            <h3>Weekly Charts</h3>
+                {/* Overview Stats Cards */}
+                <div className={styles.statsGrid}>
+                    <div className={styles.statCard}>
+                        <div className={styles.statIcon} style={{ background: 'rgba(249, 115, 22, 0.1)', color: '#f97316' }}>
+                            <Award size={24} />
                         </div>
-                        {weeklyCharts.length > 0 && (
-                            <span className={styles.badge}>{weeklyCharts.length} Available</span>
+                        <div className={styles.statContent}>
+                            <div className={styles.statValue}>{membership ? membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1) : 'None'}</div>
+                            <div className={styles.statLabel}>Current Plan</div>
+                        </div>
+                    </div>
+
+                    <div className={styles.statCard}>
+                        <div className={styles.statIcon} style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
+                            <Activity size={24} />
+                        </div>
+                        <div className={styles.statContent}>
+                            <div className={styles.statValue}>
+                                {hasChartEligibleActiveMembership ? dashboardStats.totalCharts : 'N/A'}
+                            </div>
+                            <div className={styles.statLabel}>
+                                {hasChartEligibleActiveMembership ? 'Total Charts' : 'Charts'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className={styles.statCard}>
+                        <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>
+                            <Target size={24} />
+                        </div>
+                        <div className={styles.statContent}>
+                            <div className={styles.statValue}>
+                                {hasChartEligibleActiveMembership ? dashboardStats.workoutCharts : 'N/A'}
+                            </div>
+                            <div className={styles.statLabel}>
+                                {hasChartEligibleActiveMembership ? 'Workout Plans' : 'Workout Plans (Not for Regular)'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className={styles.statCard}>
+                        <div className={styles.statIcon} style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}>
+                            <CreditCard size={24} />
+                        </div>
+                        <div className={styles.statContent}>
+                            <div className={styles.statValue}>₹{dashboardStats.totalPaid.toLocaleString()}</div>
+                            <div className={styles.statLabel}>Total Paid</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Main Content Grid */}
+                <div className={styles.mainGrid}>
+                    {/* Membership Card */}
+                    <div className={styles.card}>
+                        <div className={styles.cardHeader}>
+                            <div className={styles.cardTitle}>
+                                <Award size={20} />
+                                <h3>My Membership</h3>
+                            </div>
+                            {membership && (
+                                <a href="/membership/my-plans" className={styles.cardAction}>
+                                    View All <ArrowRight size={16} />
+                                </a>
+                            )}
+                        </div>
+
+                        {membershipLoading ? (
+                            <div className={styles.cardContent}>
+                                <p>Loading membership...</p>
+                            </div>
+                        ) : !membership ? (
+                            <div className={styles.cardContent}>
+                                <div className={styles.emptyState}>
+                                    <p>You don't have an active membership yet.</p>
+                                    <a href="/membership" className={styles.primaryButton}>
+                                        Choose a Plan
+                                    </a>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className={styles.cardContent}>
+                                {/* Expiration Warnings */}
+                                {(() => {
+                                    // Use pre-calculated grace period data (calculated at component level with useMemo)
+                                    const { isInGracePeriod: isInMembershipGracePeriod, daysRemaining: gracePeriodDaysRemaining } = membershipGracePeriodData;
+
+                                    if (isInMembershipGracePeriod && gracePeriodDaysRemaining !== null && gracePeriodDaysRemaining > 0) {
+                                        return (
+                                            <div className={styles.alertCard} style={{ background: '#fef3c7', borderColor: '#f59e0b' }}>
+                                                <Clock size={20} style={{ color: '#f59e0b' }} />
+                                                <div>
+                                                    <div className={styles.alertTitle} style={{ color: '#f59e0b' }}>Membership Grace Period</div>
+                                                    <div className={styles.alertText}>
+                                                        Your membership is in grace period ({gracePeriodDaysRemaining} day{gracePeriodDaysRemaining !== 1 ? 's' : ''} remaining).
+                                                        <a href={`/membership/renew?membershipId=${membership.id}`} style={{ marginLeft: '0.5rem', fontWeight: 600, textDecoration: 'underline' }}>Renew now</a> to reactivate your membership.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
+                                    const expirationStatus = getMembershipExpirationStatus(membership);
+                                    if (expirationStatus.isExpired) {
+                                        return (
+                                            <div className={styles.alertCard} style={{ background: '#fee2e2', borderColor: '#dc2626' }}>
+                                                <XCircle size={20} style={{ color: '#dc2626' }} />
+                                                <div>
+                                                    <div className={styles.alertTitle} style={{ color: '#dc2626' }}>Membership Expired</div>
+                                                    <div className={styles.alertText}>
+                                                        Your membership expired {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''} ago. <a href="/contact">Contact us</a> to renew.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    } else if (expirationStatus.isExpiringSoon) {
+                                        return (
+                                            <div className={styles.alertCard} style={{ background: '#fef3c7', borderColor: '#f59e0b' }}>
+                                                <Clock size={20} style={{ color: '#f59e0b' }} />
+                                                <div>
+                                                    <div className={styles.alertTitle} style={{ color: '#f59e0b' }}>Expiring Soon</div>
+                                                    <div className={styles.alertText}>
+                                                        Your membership expires in {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''}.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
+
+                                {membership.trainer_assigned && (() => {
+                                    const trainerExpiration = getTrainerPeriodExpirationStatus(membership);
+
+                                    // Check if in grace period
+                                    const trainerGracePeriodEnd = (membership as any).trainer_grace_period_end;
+                                    const now: Date = new Date();
+                                    const isInTrainerGracePeriod = isTrainerInGracePeriod(
+                                        membership.trainer_period_end ?? null,
+                                        trainerGracePeriodEnd ?? null,
+                                        now
+                                    );
+                                    const gracePeriodDaysRemaining = isInTrainerGracePeriod && trainerGracePeriodEnd
+                                        ? getTrainerGracePeriodDaysRemaining(trainerGracePeriodEnd, now)
+                                        : null;
+
+                                    if (isInTrainerGracePeriod && gracePeriodDaysRemaining !== null) {
+                                        return (
+                                            <div className={styles.alertCard} style={{ background: '#fef3c7', borderColor: '#f59e0b' }}>
+                                                <Clock size={20} style={{ color: '#f59e0b' }} />
+                                                <div>
+                                                    <div className={styles.alertTitle} style={{ color: '#f59e0b' }}>Trainer Access Grace Period</div>
+                                                    <div className={styles.alertText}>
+                                                        Your trainer access is in grace period ({gracePeriodDaysRemaining} day{gracePeriodDaysRemaining !== 1 ? 's' : ''} remaining). <a href={`/membership/renew-trainer?membershipId=${membership.id}`}>Renew now</a> to continue trainer access.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    } else if (trainerExpiration.isExpired) {
+                                        return (
+                                            <div className={styles.alertCard} style={{ background: '#fee2e2', borderColor: '#dc2626' }}>
+                                                <XCircle size={20} style={{ color: '#dc2626' }} />
+                                                <div>
+                                                    <div className={styles.alertTitle} style={{ color: '#dc2626' }}>Trainer Access Expired</div>
+                                                    <div className={styles.alertText}>
+                                                        Your trainer access has expired. <a href={`/membership/renew-trainer?membershipId=${membership.id}`}>Renew trainer access</a> to continue.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    } else if (trainerExpiration.isExpiringSoon) {
+                                        return (
+                                            <div className={styles.alertCard} style={{ background: '#fef3c7', borderColor: '#f59e0b' }}>
+                                                <Clock size={20} style={{ color: '#f59e0b' }} />
+                                                <div>
+                                                    <div className={styles.alertTitle} style={{ color: '#f59e0b' }}>Trainer Access Expiring</div>
+                                                    <div className={styles.alertText}>
+                                                        Trainer access expires in {trainerExpiration.daysRemaining} day{trainerExpiration.daysRemaining !== 1 ? 's' : ''}. <a href={`/membership/renew-trainer?membershipId=${membership.id}`}>Renew now</a>.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
+
+                                {/* Membership Details */}
+                                <div className={styles.infoGrid}>
+                                    <div className={styles.infoItem}>
+                                        <span className={styles.infoLabel}>Plan</span>
+                                        <span className={styles.infoValue}>{membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)}</span>
+                                    </div>
+                                    <div className={styles.infoItem}>
+                                        <span className={styles.infoLabel}>Status</span>
+                                        <span className={`${styles.statusBadge} ${statusBadge?.className || ''}`}>
+                                            <StatusIcon size={14} />
+                                            {statusBadge?.text}
+                                        </span>
+                                    </div>
+                                    <div className={styles.infoItem}>
+                                        <span className={styles.infoLabel}>Duration</span>
+                                        <span className={styles.infoValue}>{membership.duration_months} Months</span>
+                                    </div>
+                                    <div className={styles.infoItem}>
+                                        <span className={styles.infoLabel}>Price</span>
+                                        <span className={styles.infoValue}>₹{membership.price.toLocaleString()}</span>
+                                    </div>
+                                    {membership.membership_start_date && (
+                                        <div className={styles.infoItem}>
+                                            <span className={styles.infoLabel}>Start Date</span>
+                                            <span className={styles.infoValue}>{formatDate(membership.membership_start_date)}</span>
+                                        </div>
+                                    )}
+                                    {membership.membership_end_date && (
+                                        <div className={styles.infoItem}>
+                                            <span className={styles.infoLabel}>End Date</span>
+                                            <span className={styles.infoValue}>
+                                                {formatDate(membership.membership_end_date)}
+                                                {(() => {
+                                                    const expirationStatus = getMembershipExpirationStatus(membership);
+                                                    if (expirationStatus.daysRemaining !== null) {
+                                                        return <span className={styles.daysRemaining} style={{ color: expirationStatus.isExpired ? '#dc2626' : expirationStatus.isExpiringSoon ? '#f59e0b' : '#6b7280' }}>
+                                                            ({expirationStatus.daysRemaining} days {expirationStatus.isExpired ? 'ago' : 'remaining'})
+                                                        </span>;
+                                                    }
+                                                    return null;
+                                                })()}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {membership.trainer_assigned && membership.trainer_id && (() => {
+                                        // CRITICAL: For Regular Monthly plans, hide trainer info if membership has expired
+                                        // Trainer access is tightly bound to membership lifecycle - no carryover to grace period
+                                        const planName = (membership.plan_name || '').toLowerCase();
+                                        const isRegularMonthly = planName.includes('regular') && (planName.includes('monthly') || planName.includes('boys') || planName.includes('girls'));
+
+                                        if (isRegularMonthly) {
+                                            const endDate = membership.membership_end_date || membership.end_date;
+                                            const now = new Date();
+
+                                            // If membership has expired (even if in grace period), hide trainer completely
+                                            if (endDate && new Date(endDate) <= now) {
+                                                // Membership expired - trainer access should be hidden
+                                                return null;
+                                            }
+                                        }
+
+                                        // For non-Regular plans or Regular plans that haven't expired, show trainer info
+                                        return (
+                                            <>
+                                                <div className={styles.infoItem}>
+                                                    <span className={styles.infoLabel}>Trainer</span>
+                                                    <span className={styles.infoValue}>
+                                                        {membership.trainer_name || 'N/A'}
+                                                        {(() => {
+                                                            // Use centralized messaging access control utility
+                                                            // Only show message button when trainer access is actively valid
+                                                            const now = new Date();
+                                                            const messagingAccess = checkTrainerMessagingAccess(
+                                                                membership.trainer_period_end ?? null,
+                                                                membership.trainer_grace_period_end ?? null,
+                                                                now, // Pass demo mode date for accurate access checking
+                                                                membership.membership_end_date || membership.end_date || null, // Pass membership end date for Regular Monthly check
+                                                                membership.plan_name // Pass plan name for Regular Monthly check
+                                                            );
+
+                                                            if (messagingAccess.canMessage) {
+                                                                return (
+                                                                    <a href={`/messages/trainer/${membership.trainer_id}`} className={styles.messageLink}>
+                                                                        <MessageSquare size={14} />
+                                                                        Message
+                                                                    </a>
+                                                                );
+                                                            }
+                                                            // Don't show anything when access is expired or in grace period
+                                                            return null;
+                                                        })()}
+                                                    </span>
+                                                </div>
+                                                {membership.trainer_period_end && (
+                                                    <div className={styles.infoItem}>
+                                                        <span className={styles.infoLabel}>Trainer Access Until</span>
+                                                        <span className={styles.infoValue}>
+                                                            {formatDate(membership.trainer_period_end)}
+                                                            {(() => {
+                                                                const trainerExpiration = getTrainerPeriodExpirationStatus(membership);
+                                                                if (trainerExpiration.daysRemaining !== null) {
+                                                                    return <span className={styles.daysRemaining} style={{ color: trainerExpiration.isExpired ? '#dc2626' : trainerExpiration.isExpiringSoon ? '#f59e0b' : '#6b7280' }}>
+                                                                        ({trainerExpiration.daysRemaining} days {trainerExpiration.isExpired ? 'ago' : 'remaining'})
+                                                                    </span>;
+                                                                }
+                                                                return null;
+                                                            })()}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+
+                                {/* Payment Summary */}
+                                {membershipHistory?.financialSummary && (
+                                    <div className={styles.paymentSummary}>
+                                        <div className={styles.paymentItem}>
+                                            <span>Total Paid</span>
+                                            <span className={styles.paymentAmount}>₹{membershipHistory.financialSummary.totalPaid.toLocaleString()}</span>
+                                        </div>
+                                        <div className={styles.paymentItem}>
+                                            <span>Pending</span>
+                                            <span className={styles.paymentPending}>₹{membershipHistory.financialSummary.pendingAmount.toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Invoices Section */}
+                                <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <Receipt size={18} style={{ color: '#f97316' }} />
+                                            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'white', margin: 0 }}>Invoices</h3>
+                                        </div>
+                                        {invoices.length > 0 && (
+                                            <span className={styles.badge}>{invoices.length} Available</span>
+                                        )}
+                                    </div>
+                                    {loadingInvoices ? (
+                                        <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>Loading invoices...</p>
+                                    ) : invoices.length === 0 ? (
+                                        <div className={styles.emptyState}>
+                                            <p style={{ fontSize: '0.875rem', color: '#9ca3af' }}>
+                                                No invoices available yet. Invoices are generated automatically after payment approval.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                            {invoices.map((invoice: any) => {
+                                                const invoiceTypeLabel = invoice.invoice_type === 'initial'
+                                                    ? 'Initial Purchase'
+                                                    : invoice.invoice_type === 'renewal'
+                                                        ? 'Membership Plan Renewal'
+                                                        : invoice.invoice_type === 'trainer_renewal'
+                                                            ? 'Trainer Access Renewal'
+                                                            : 'Payment';
+                                                const invoiceTypeColor = invoice.invoice_type === 'initial'
+                                                    ? '#3b82f6'
+                                                    : invoice.invoice_type === 'renewal'
+                                                        ? '#f59e0b'
+                                                        : invoice.invoice_type === 'trainer_renewal'
+                                                            ? '#10b981'
+                                                            : '#6b7280';
+                                                return (
+                                                    <div
+                                                        key={invoice.id}
+                                                        style={{
+                                                            padding: '0.875rem',
+                                                            background: 'rgba(255, 255, 255, 0.05)',
+                                                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                                                            borderRadius: '0.5rem',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            gap: '1rem',
+                                                            transition: 'all 0.2s ease'
+                                                        }}
+                                                    >
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                                                                <span style={{
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: 600,
+                                                                    padding: '0.25rem 0.5rem',
+                                                                    borderRadius: '9999px',
+                                                                    background: `${invoiceTypeColor}15`,
+                                                                    color: invoiceTypeColor,
+                                                                    border: `1px solid ${invoiceTypeColor}30`
+                                                                }}>
+                                                                    {invoiceTypeLabel}
+                                                                </span>
+                                                                <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                                                                    {invoice.invoice_number}
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ fontSize: '0.8125rem', color: '#d1d5db', marginBottom: '0.25rem' }}>
+                                                                ₹{parseFloat(invoice.amount).toLocaleString()} • {formatDate(invoice.created_at)}
+                                                            </div>
+                                                        </div>
+                                                        <a
+                                                            href={invoice.file_url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className={styles.downloadBtn}
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '0.375rem',
+                                                                padding: '0.5rem 0.875rem',
+                                                                background: 'rgba(249, 115, 22, 0.1)',
+                                                                color: '#f97316',
+                                                                border: '1px solid rgba(249, 115, 22, 0.3)',
+                                                                borderRadius: '0.5rem',
+                                                                fontSize: '0.8125rem',
+                                                                fontWeight: 600,
+                                                                textDecoration: 'none',
+                                                                transition: 'all 0.2s ease'
+                                                            }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.background = 'rgba(249, 115, 22, 0.2)';
+                                                                e.currentTarget.style.borderColor = 'rgba(249, 115, 22, 0.5)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.background = 'rgba(249, 115, 22, 0.1)';
+                                                                e.currentTarget.style.borderColor = 'rgba(249, 115, 22, 0.3)';
+                                                            }}
+                                                        >
+                                                            <Download size={14} />
+                                                            Download
+                                                        </a>
+                                                    </div>
+                                                );
+                                            })}
+                                            <div style={{
+                                                marginTop: '0.5rem',
+                                                padding: '0.75rem',
+                                                background: 'rgba(251, 191, 36, 0.1)',
+                                                border: '1px solid rgba(251, 191, 36, 0.2)',
+                                                borderRadius: '0.5rem',
+                                                fontSize: '0.75rem',
+                                                color: '#fbbf24'
+                                            }}>
+                                                <Bell size={14} style={{ display: 'inline', marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                                                Please download invoices soon, they may be deleted later.
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         )}
                     </div>
 
-                    <div className={styles.cardContent}>
-                        {!hasActiveMembership ? (
-                            <div className={styles.emptyState}>
-                                <p>Weekly charts will appear here once your membership is activated.</p>
+                    {/* Weekly Charts Card */}
+                    <div className={styles.card}>
+                        <div className={styles.cardHeader}>
+                            <div className={styles.cardTitle}>
+                                <FileText size={20} />
+                                <h3>Weekly Charts</h3>
                             </div>
-                        ) : !hasChartEligibleActiveMembership ? (
-                            <div className={styles.emptyState}>
-                                <p><strong>Charts not available for your current plan.</strong></p>
-                                <p className={styles.emptySubtext}>
-                                    {allMemberships.some((m: any) => {
-                                        const planLower = String(m.plan_name || '').toLowerCase();
-                                        return planLower.includes('regular') && m.status === 'active';
-                                    }) ? (
-                                        <>Regular plans require a trainer addon to receive workout and diet charts. Add a trainer to your membership to get weekly charts.</>
-                                    ) : (
-                                        <>Weekly charts will appear here once your membership is activated.</>
-                                    )}
-                                </p>
-                            </div>
-                        ) : chartsLoading ? (
-                            <p>Loading charts...</p>
-                        ) : (
-                            <>
-                                {/* Missing Chart Reminders */}
-                                {allMemberships
-                                    .filter((m: any) => m.status === 'active' && !String(m.plan_name || '').toLowerCase().includes('regular'))
-                                    .map((membership) => {
-                                    const nextWeekInfo = getNextWeekNeedingChart(membership);
-                                    if (!nextWeekInfo) return null;
-                                    return (
-                                        <div key={membership.id} className={styles.alertCard} style={{ background: '#eff6ff', borderColor: '#3b82f6', marginBottom: '1rem' }}>
-                                            <Bell size={20} style={{ color: '#3b82f6' }} />
-                                            <div>
-                                                <div className={styles.alertTitle} style={{ color: '#3b82f6' }}>
-                                                    Week {nextWeekInfo.week} Chart Missing
+                            {weeklyCharts.length > 0 && (
+                                <span className={styles.badge}>{weeklyCharts.length} Available</span>
+                            )}
+                        </div>
+
+                        <div className={styles.cardContent}>
+                            {!hasActiveMembership ? (
+                                <div className={styles.emptyState}>
+                                    <p>Weekly charts will appear here once your membership is activated.</p>
+                                </div>
+                            ) : !hasChartEligibleActiveMembership ? (
+                                <div className={styles.emptyState}>
+                                    <p><strong>Charts not available for your current plan.</strong></p>
+                                    <p className={styles.emptySubtext}>
+                                        {allMemberships.some((m: any) => {
+                                            const planLower = String(m.plan_name || '').toLowerCase();
+                                            return planLower.includes('regular') && m.status === 'active';
+                                        }) ? (
+                                            <>Regular plans require a trainer addon to receive workout and diet charts. Add a trainer to your membership to get weekly charts.</>
+                                        ) : (
+                                            <>Weekly charts will appear here once your membership is activated.</>
+                                        )}
+                                    </p>
+                                </div>
+                            ) : chartsLoading ? (
+                                <p>Loading charts...</p>
+                            ) : (
+                                <>
+                                    {/* Missing Chart Reminders */}
+                                    {allMemberships
+                                        .filter((m: any) => m.status === 'active' && !String(m.plan_name || '').toLowerCase().includes('regular'))
+                                        .map((membership) => {
+                                            const nextWeekInfo = getNextWeekNeedingChart(membership);
+                                            if (!nextWeekInfo) return null;
+                                            return (
+                                                <div key={membership.id} className={styles.alertCard} style={{ background: '#eff6ff', borderColor: '#3b82f6', marginBottom: '1rem' }}>
+                                                    <Bell size={20} style={{ color: '#3b82f6' }} />
+                                                    <div>
+                                                        <div className={styles.alertTitle} style={{ color: '#3b82f6' }}>
+                                                            Week {nextWeekInfo.week} Chart Missing
+                                                        </div>
+                                                        <div className={styles.alertText}>
+                                                            {nextWeekInfo.types.length === 1 ? (
+                                                                <>Your <strong>{nextWeekInfo.types[0] === 'workout' ? 'Workout' : 'Diet'}</strong> chart is missing. <a href="/contact">Contact admin</a>.</>
+                                                            ) : (
+                                                                <>Your <strong>Workout and Diet</strong> charts are missing. <a href="/contact">Contact admin</a>.</>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className={styles.alertText}>
-                                                    {nextWeekInfo.types.length === 1 ? (
-                                                        <>Your <strong>{nextWeekInfo.types[0] === 'workout' ? 'Workout' : 'Diet'}</strong> chart is missing. <a href="/contact">Contact admin</a>.</>
-                                                    ) : (
-                                                        <>Your <strong>Workout and Diet</strong> charts are missing. <a href="/contact">Contact admin</a>.</>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                            );
+                                        })}
 
                                     {organizedCharts.currentPlanCharts.length === 0 && organizedCharts.previousPlanCharts.length === 0 ? (
-                                    <div className={styles.emptyState}>
-                                        <p>No weekly charts available yet.</p>
-                                        <p className={styles.emptySubtext}>Charts will be uploaded by admin or your trainer.</p>
-                                    </div>
-                                ) : (
+                                        <div className={styles.emptyState}>
+                                            <p>No weekly charts available yet.</p>
+                                            <p className={styles.emptySubtext}>Charts will be uploaded by admin or your trainer.</p>
+                                        </div>
+                                    ) : (
                                         <>
                                             {/* Current Plan - Current Week Charts */}
                                             {organizedCharts.currentPlanCharts.map(({ membership, currentWeekCharts, allCharts }) => {
@@ -1201,7 +1438,7 @@ export default function Dashboard() {
                                                 const currentWeek = calculateCurrentWeek(startDate);
                                                 const hasMoreCharts = allCharts.length > currentWeekCharts.length;
 
-                                            return (
+                                                return (
                                                     <div key={membership.id} style={{ marginBottom: '2rem' }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                                                             <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: '#f97316' }}>
@@ -1226,16 +1463,16 @@ export default function Dashboard() {
                                                         {currentWeekCharts.length > 0 ? (
                                                             <div className={styles.chartsList}>
                                                                 {currentWeekCharts.map((chart) => (
-                                                <div key={chart.id} className={styles.chartCard}>
-                                                    <div className={styles.chartHeader}>
-                                                        <span className={styles.chartWeek}>Week {chart.week_number}</span>
-                                                        <span className={styles.chartType}>
-                                                            {chart.chart_type === 'workout' ? 'Workout' : 'Diet'}
-                                                        </span>
-                                                    </div>
-                                                    {chart.title && (
-                                                        <p className={styles.chartTitle}>{chart.title}</p>
-                                                    )}
+                                                                    <div key={chart.id} className={styles.chartCard}>
+                                                                        <div className={styles.chartHeader}>
+                                                                            <span className={styles.chartWeek}>Week {chart.week_number}</span>
+                                                                            <span className={styles.chartType}>
+                                                                                {chart.chart_type === 'workout' ? 'Workout' : 'Diet'}
+                                                                            </span>
+                                                                        </div>
+                                                                        {chart.title && (
+                                                                            <p className={styles.chartTitle}>{chart.title}</p>
+                                                                        )}
                                                                         {chart.content && (
                                                                             <div className={styles.chartContent} style={{
                                                                                 marginTop: '0.75rem',
@@ -1252,10 +1489,10 @@ export default function Dashboard() {
                                                                                 {chart.content}
                                                                             </div>
                                                                         )}
-                                                    <div className={styles.chartMeta}>
-                                                        <span><Calendar size={12} /> {formatDate(chart.created_at)}</span>
-                                                        <span>By: {chart.created_by && chart.trainers ? (Array.isArray(chart.trainers) ? chart.trainers[0]?.name : chart.trainers.name) : 'Admin'}</span>
-                                                    </div>
+                                                                        <div className={styles.chartMeta}>
+                                                                            <span><Calendar size={12} /> {formatDate(chart.created_at)}</span>
+                                                                            <span>By: {chart.created_by && chart.trainers ? (Array.isArray(chart.trainers) ? chart.trainers[0]?.name : chart.trainers.name) : 'Admin'}</span>
+                                                                        </div>
                                                                         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
                                                                             <button
                                                                                 onClick={() => {
@@ -1267,16 +1504,16 @@ export default function Dashboard() {
                                                                                 <Eye size={14} />
                                                                                 View Chart
                                                                             </button>
-                                                    {chart.file_url && (
-                                                        <a
-                                                            href={chart.file_url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className={styles.downloadBtn}
-                                                        >
-                                                            <Download size={14} />
-                                                            Download
-                                                        </a>
+                                                                            {chart.file_url && (
+                                                                                <a
+                                                                                    href={chart.file_url}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    className={styles.downloadBtn}
+                                                                                >
+                                                                                    <Download size={14} />
+                                                                                    Download
+                                                                                </a>
                                                                             )}
                                                                         </div>
                                                                     </div>
@@ -1299,10 +1536,10 @@ export default function Dashboard() {
                                                             <div className={styles.emptyState}>
                                                                 <p>Charts will appear here once your membership starts.</p>
                                                             </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
 
                                             {/* Previous Plans Charts */}
                                             {organizedCharts.previousPlanCharts.length > 0 && (
@@ -1326,7 +1563,7 @@ export default function Dashboard() {
                                                                             <span className={styles.previousPlanBadge}>
                                                                                 {membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)}
                                                                             </span>
-                                    </div>
+                                                                        </div>
                                                                         {chart.title && (
                                                                             <p className={styles.chartTitle}>{chart.title}</p>
                                                                         )}
@@ -1381,11 +1618,11 @@ export default function Dashboard() {
                                                 </div>
                                             )}
                                         </>
-                                )}
-                            </>
-                        )}
+                                    )}
+                                </>
+                            )}
+                        </div>
                     </div>
-                </div>
 
                 </div>
             </div>
@@ -1499,8 +1736,8 @@ export default function Dashboard() {
                                                                 </div>
                                                             </div>
                                                         ))}
-            </div>
-        </div>
+                                                    </div>
+                                                </div>
                                             );
                                         })}
                                     </div>

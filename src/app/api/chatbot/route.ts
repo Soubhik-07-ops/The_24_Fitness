@@ -46,7 +46,7 @@ async function isAdminOrTrainer(): Promise<boolean> {
     }
 }
 
-// Knowledge base for responses
+// Knowledge base for responses - Updated for production system
 const KNOWLEDGE_BASE = {
     greeting: [
         "Hello! I'm The24FitBot, your virtual assistant 💪 How can I help you today?",
@@ -54,36 +54,40 @@ const KNOWLEDGE_BASE = {
         "Hey! 👋 I'm The24FitBot. What can I help you with today?"
     ],
     membership: {
-        join: "To join our gym:\n1. Sign up or log in to your account (/signup)\n2. Go to Membership page (/membership)\n3. Choose a plan (Basic, Premium, or Elite)\n4. Fill membership form with your details\n5. Complete payment via QR code\n6. Upload payment screenshot and transaction ID\n7. Wait for admin approval\n\nOnce approved, your membership will be activated! 💪",
-        purchase: "Membership purchase process:\n1. Go to Membership page (/membership)\n2. Select your preferred plan (Basic/Premium/Elite)\n3. Choose duration (1, 3, 6, or 12 months)\n4. Fill membership form (/membership/form)\n5. Go to payment page - you'll see a QR code\n6. Complete payment and upload:\n   - Payment screenshot\n   - Transaction ID\n7. Payment will be manually verified\n8. Membership activates after admin approval",
-        plans: "We offer three membership plans:\n\n💪 Basic Plan - Online mode only\n⭐ Premium Plan - Includes 1 week free trainer access\n🏆 Elite Plan - Includes 1 month free trainer access\n\nAll plans available in 3, 6, or 12 month durations.\nVisit /membership to see detailed pricing and features!",
-        pending: "If your payment is pending, it means it's waiting for admin verification. This is normal! Our team manually verifies each payment to ensure security. You'll receive a notification once your membership is approved. Usually takes 24-48 hours.",
-        expired: "If your membership has expired, you can renew it from:\nDashboard → My Plans (/membership/my-plans)\n\nOr use the Renew Plan option from your dashboard. Renewal follows the same process as a new membership.",
-        renewal: "To renew your membership:\n1. Go to Dashboard (/dashboard)\n2. Click on 'My Plans' or 'Renew Plan'\n3. Select your plan and duration\n4. Complete payment process\n5. Wait for approval\n\nYour new membership will start after the current one expires or immediately after approval.",
-        myPlans: "View all your memberships at:\n/membership/my-plans\n\nHere you can see:\n- All your membership history\n- Current and past memberships\n- Membership status\n- Renewal options",
-        status: "Check your membership status in:\nDashboard (/dashboard)\n\nStatus types:\n✅ Active - Membership is active and running\n⏳ Pending - Waiting for admin approval\n❌ Expired - Membership has ended\n🚫 Rejected - Payment was rejected",
+        join: "To join our gym:\n1. Sign up or log in (/signup)\n2. Go to Membership page (/membership)\n3. Choose a plan (Basic, Premium, Elite, or Regular Monthly)\n4. Fill membership form with your details\n5. Complete payment via QR code\n6. Upload payment screenshot and transaction ID\n7. Wait for admin approval (24-48 hours)\n\nOnce approved, your membership activates! 💪",
+        purchase: "Membership purchase process:\n1. Go to Membership page (/membership)\n2. Select your plan:\n   - Basic/Premium/Elite (3, 6, or 12 months)\n   - Regular Monthly (Boys ₹1,200 first payment, Girls ₹1,400)\n3. Fill membership form (/membership/form)\n4. Select addons (In-Gym access, Trainer) if needed\n5. Go to payment page - scan QR code\n6. Upload payment screenshot + transaction ID\n7. Wait for admin approval (24-48 hours)\n\nYour membership activates after admin verifies payment!",
+        plans: "We offer four membership plans:\n\n💪 Basic Plan - Online mode\n   • Boys: ₹2,200 (3 months)\n   • Girls: ₹2,400 (3 months)\n   • Workout charts included\n   • Trainer available as addon\n\n⭐ Premium Plan - Online mode\n   • Boys: ₹4,000 (6 months)\n   • Girls: ₹4,400 (6 months)\n   • 1 week FREE trainer access\n   • Workout + Diet charts\n\n🏆 Elite Plan - Online mode\n   • Boys: ₹6,800 (12 months)\n   • Girls: ₹7,800 (12 months)\n   • 1 month FREE trainer access\n   • Workout + Diet charts\n\n🏋️ Regular Monthly - In-Gym access\n   • Boys: ₹1,200 first payment, ₹650/month after\n   • Girls: ₹1,400 first payment, ₹700/month after\n   • 24/6 gym access\n   • Monthly renewal\n\nVisit /membership for detailed pricing!",
+        pending: "If your payment is pending, it's waiting for admin verification. This is normal! Our team manually verifies each payment for security.\n\n⏱️ Approval usually takes 24-48 hours\n📧 You'll receive a notification when approved\n📊 Check your Dashboard for status updates\n\nIf it's been more than 48 hours, contact support via /contact page.",
+        expired: "If your membership has expired:\n\n1️⃣ Check if you're in grace period (15 days after expiry)\n   • If yes → Renew from Dashboard\n   • If no → Grace period ended, contact support\n\n2️⃣ To renew:\n   • Go to Dashboard (/dashboard)\n   • Click 'Renew Membership' button\n   • Complete payment process\n   • Wait for admin approval\n\n⚠️ Regular Monthly plans: If expired, trainer access is immediately revoked. Renew membership to regain access.",
+        renewal: "Membership renewal process:\n\n1️⃣ Check eligibility:\n   • Your membership must be in grace period (15 days after expiry)\n   • Status should show 'Grace Period' in Dashboard\n\n2️⃣ Renew steps:\n   • Go to Dashboard (/dashboard)\n   • Click 'Renew Membership' button\n   • Select plan and addons (if needed)\n   • Complete payment\n   • Wait for admin approval (24-48 hours)\n\n3️⃣ After approval:\n   • Regular Monthly: Duration resets to 1 month from approval date\n   • Other plans: Duration extends from current end date\n   • Invoice generated automatically\n\n⏰ Renew within grace period (15 days) to avoid losing membership!",
+        myPlans: "View all your memberships at:\n/membership/my-plans\n\nHere you can see:\n- All membership history\n- Current and past memberships\n- Membership status (Active, Grace Period, Expired)\n- Renewal eligibility\n- Payment history\n- Invoice downloads",
+        status: "Membership status types:\n\n✅ Active - Membership is active and running\n   • Full access to all features\n   • Trainer access (if assigned)\n   • Weekly charts available\n\n⏳ Pending - Waiting for admin approval\n   • Payment submitted, under review\n   • Usually approved within 24-48 hours\n\n⏰ Grace Period - Membership expired, renewal window open\n   • 15 days to renew\n   • Can still access some features\n   • Renew from Dashboard\n\n❌ Expired - Membership ended, grace period passed\n   • Contact support for assistance\n   • May need to create new membership\n\n🚫 Rejected - Payment was rejected\n   • Check reason in Dashboard\n   • Contact support via /contact\n   • Resubmit payment if needed",
+        gracePeriod: "Grace Period explained:\n\n📅 Membership Grace Period (15 days):\n   • Starts when membership end date passes\n   • You have 15 days to renew\n   • Status changes to 'Grace Period'\n   • Renew from Dashboard during this time\n   • After 15 days, membership expires permanently\n\n📅 Trainer Grace Period (5 days):\n   • Starts when trainer access expires\n   • You have 5 days to renew trainer access\n   • Can't message trainer during grace period\n   • Renew trainer separately from membership\n\n⚠️ Regular Monthly plans: If membership expires, trainer access is immediately revoked (no grace period for trainer).",
+        regularMonthly: "Regular Monthly Plan details:\n\n💰 Pricing:\n   • Boys: ₹1,200 first payment (includes admission + 1 month)\n   • Girls: ₹1,400 first payment (includes admission + 1 month)\n   • From 2nd month: ₹650/month (boys) or ₹700/month (girls)\n\n🏋️ Features:\n   • 24/6 gym access\n   • All equipment access\n   • Locker facility\n   • Monthly renewal (no long-term commitment)\n\n⚠️ Important rules:\n   • Duration resets to 1 month on each renewal\n   • If membership expires, trainer access is immediately revoked\n   • Trainer addon available (matches membership duration)\n   • Trainer access cannot exceed membership end date",
     },
     payment: {
-        qr: "Payment is done via QR code only. Here's how:\n1. Complete membership form\n2. Go to payment page (/membership/payment)\n3. Scan or view the QR code displayed\n4. Complete payment through your payment app (UPI, Paytm, etc.)\n5. Upload payment screenshot\n6. Enter transaction ID\n7. Submit for verification\n\nPayment verification takes 24-48 hours.",
-        verification: "Payment verification is done manually by our admin team. This usually takes 24-48 hours. You'll receive a notification once your payment is verified and membership is activated. Check your dashboard for status updates.",
-        refund: "For refunds, payment disputes, or payment-related issues, please contact gym support through the Contact page (/contact). I can't process refunds directly.",
-        screenshot: "To upload payment screenshot:\n1. After making payment, take a screenshot\n2. Go to payment page (/membership/payment)\n3. Click 'Upload Screenshot' button\n4. Select your screenshot file\n5. Enter transaction ID\n6. Submit",
+        qr: "Payment is done via QR code only. Here's how:\n1. Complete membership form\n2. Go to payment page (/membership/payment)\n3. Scan or view the QR code displayed\n4. Complete payment through your payment app (UPI, Paytm, etc.)\n5. Upload payment screenshot\n6. Enter transaction ID\n7. Submit for verification\n\n⏱️ Payment verification takes 24-48 hours\n📧 You'll receive a notification when verified\n📊 Check Dashboard for payment status",
+        verification: "Payment verification process:\n\n⏱️ Timeline: 24-48 hours (usually within 24 hours)\n\n✅ What happens:\n1. Admin manually verifies your payment\n2. Checks screenshot and transaction ID\n3. Approves membership\n4. Invoice generated automatically\n5. You receive notification\n\n📊 Check status:\n• Dashboard → Payment status\n• Status: Pending → Verified\n• Once verified, membership activates\n\nIf it's been more than 48 hours, contact support via /contact.",
+        refund: "For refunds, payment disputes, or payment-related issues:\n\n📞 Contact support:\n• Go to Contact page (/contact)\n• Submit your request\n• Admin will review and respond\n\n⚠️ I cannot process refunds directly. All refund requests must go through admin support for security and verification.",
+        screenshot: "To upload payment screenshot:\n1. After making payment via QR code, take a screenshot\n2. Go to payment page (/membership/payment)\n3. Click 'Upload Screenshot' button\n4. Select your screenshot file (max 5MB)\n5. Enter transaction ID from your payment app\n6. Click 'Submit Payment'\n\n✅ Make sure:\n• Screenshot is clear and readable\n• Transaction ID matches payment app\n• Both are submitted together",
+        status: "Payment status types:\n\n⏳ Pending - Waiting for admin verification\n   • Payment submitted, under review\n   • Usually verified within 24-48 hours\n   • Check Dashboard for updates\n\n✅ Verified - Payment approved\n   • Membership activated\n   • Invoice generated\n   • Full access granted\n\n🚫 Rejected - Payment rejected\n   • Check reason in Dashboard\n   • Contact support via /contact\n   • Resubmit payment if needed\n\n💡 Tip: Only one pending payment allowed per membership. Wait for approval before submitting another.",
     },
     trainer: {
-        assignment: "Trainers are assigned to members after membership activation:\n\n- Premium Plan: Includes 1 week free trainer\n- Elite Plan: Includes 1 month free trainer\n- Basic Plan: No trainer included (can add as addon)\n\nOnce your membership is approved, admin will assign you a trainer. You'll see trainer info in your Dashboard.",
-        messaging: "You can message your assigned trainer from:\nDashboard → Click on trainer name → Message\n\nOr directly: /messages/trainer/[trainerId]\n\nMessaging is for professional fitness-related communication only. Please maintain respectful conversations.",
-        notAssigned: "If you don't have a trainer assigned yet, it's likely because:\n1. Your membership is still pending approval\n2. Trainer assignment is in progress\n3. You have Basic plan (no trainer included)\n\nOnce your membership is active, a trainer will be assigned if your plan includes it.",
-        renew: "To renew trainer access:\n1. Go to Dashboard\n2. Look for 'Renew Trainer' option\n3. Select trainer and duration\n4. Complete payment\n5. Wait for approval\n\nTrainer renewal is separate from membership renewal.",
-        addon: "Trainer addon allows you to add a trainer to your membership:\n1. Available for all plans\n2. Can be added during membership purchase\n3. Or added later as an addon\n4. Trainer addon has its own duration and pricing\n\nCheck Dashboard for trainer addon options.",
+        assignment: "Trainer assignment:\n\n📋 Plan-based trainer access:\n• Premium Plan: 1 week FREE trainer (included)\n• Elite Plan: 1 month FREE trainer (included)\n• Basic Plan: No trainer included (add as addon)\n• Regular Monthly: No trainer included (add as addon)\n\n⏱️ Assignment timeline:\n• Assigned after membership approval\n• Admin assigns trainer based on availability\n• You'll see trainer info in Dashboard\n• Notification sent when assigned\n\n💡 Trainer addon:\n• Available for all plans\n• Can add during purchase or renewal\n• Separate pricing and duration",
+        messaging: "Trainer messaging:\n\n✅ When you CAN message:\n• Trainer access is active (not expired)\n• Membership is active\n• Trainer is assigned\n\n❌ When you CANNOT message:\n• Trainer access expired\n• Trainer in grace period (5 days)\n• Regular Monthly plan expired (trainer revoked immediately)\n• Membership expired\n\n📱 How to message:\n• Dashboard → Click trainer name → 'Message' button\n• Or: /messages/trainer/[trainerId]\n\n💬 Keep it professional and fitness-related!",
+        notAssigned: "If you don't have a trainer assigned:\n\n1️⃣ Check membership status:\n   • Must be 'Active' (not pending)\n   • Wait for admin approval first\n\n2️⃣ Check your plan:\n   • Basic Plan: No trainer included (add as addon)\n   • Regular Monthly: No trainer included (add as addon)\n   • Premium/Elite: Trainer included (assigned after approval)\n\n3️⃣ If eligible but not assigned:\n   • Admin may be assigning trainer\n   • Check Dashboard for updates\n   • Contact support via /contact if delayed\n\n⏱️ Assignment usually happens within 24-48 hours after membership approval.",
+        renew: "Trainer renewal process:\n\n✅ Eligibility:\n• Membership must be 'Active'\n• Trainer access must be expired\n• At least 30 days remaining on membership\n\n📋 Steps:\n1. Go to Dashboard (/dashboard)\n2. Look for 'Renew Trainer' option\n3. Select trainer and duration (1-12 months)\n4. Complete payment\n5. Wait for admin approval (24-48 hours)\n\n⚠️ Important:\n• Trainer renewal is SEPARATE from membership renewal\n• Trainer access cannot exceed membership end date\n• Regular Monthly: If membership expires, trainer is revoked immediately\n• Invoice generated after approval\n\n💡 Trainer grace period: 5 days after expiry to renew",
+        addon: "Trainer addon details:\n\n✅ Available for:\n• All plans (Basic, Premium, Elite, Regular Monthly)\n• Can add during initial purchase\n• Can add during membership renewal\n• Can add anytime (if membership active)\n\n💰 Pricing:\n• Varies by trainer (check /trainers page)\n• Duration: 1-12 months\n• Price = trainer rate × duration\n\n📋 How to add:\n1. During purchase: Select trainer addon in form\n2. During renewal: Select trainer addon option\n3. Complete payment\n4. Wait for admin approval\n\n⚠️ Regular Monthly: Trainer addon duration matches membership (1 month)",
+        expiry: "Trainer access expiry:\n\n⏰ Expiry rules:\n• Trainer access expires on trainer_period_end date\n• After expiry: 5-day grace period to renew\n• During grace period: Cannot message trainer\n• After grace period: Trainer access revoked\n\n⚠️ Regular Monthly plans:\n• If membership expires, trainer access is IMMEDIATELY revoked\n• No grace period for trainer if membership expired\n• Must renew membership first to regain trainer access\n\n📊 Check status:\n• Dashboard shows trainer expiry date\n• Grace period alerts appear\n• Renew trainer before grace period ends\n\n💡 Trainer renewal requires:\n• Active membership\n• At least 30 days remaining on membership",
     },
     charts: {
-        weekly: "Weekly fitness charts are uploaded by your assigned trainer or admin. You can view them in:\nDashboard → Weekly Charts section\n\nThese charts show:\n- Workout plans (all plans)\n- Diet plans (Premium/Elite only)\n- Weekly progress tracking\n\nCharts are organized by week number.",
-        download: "Yes! You can download your weekly charts:\n1. Go to Dashboard\n2. Scroll to Weekly Charts section\n3. Click 'Download' button on any chart\n4. Charts are available as PDF or image files\n\nDownload all your charts to track your fitness journey!",
-        missing: "If you don't see weekly charts:\n1. Check if your membership is active\n2. Verify trainer is assigned\n3. Charts are uploaded weekly by trainer\n4. Basic plan only gets workout charts\n5. Premium/Elite get both workout and diet charts\n\nIf charts are missing, contact your trainer or use Contact page.",
+        weekly: "Weekly fitness charts:\n\n📊 Chart types:\n• Workout charts: All plans (Basic, Premium, Elite, Regular Monthly)\n• Diet charts: Premium and Elite plans only\n\n👤 Who uploads:\n• Trainer: Uploads when trainer access is active\n• Admin: Uploads when trainer access expired\n• Uploaded weekly\n\n📅 View charts:\n• Dashboard → Weekly Charts section\n• Organized by week number\n• Download available for all charts\n\n⚠️ Regular Monthly plans:\n• If membership expired, charts may not be available\n• Renew membership to continue receiving charts",
+        download: "Download weekly charts:\n\n1. Go to Dashboard (/dashboard)\n2. Scroll to 'Weekly Charts' section\n3. Click 'Download' button on any chart\n4. Charts available as PDF or image files\n\n✅ Available for:\n• All uploaded charts\n• Workout plans\n• Diet plans (Premium/Elite)\n• Historical charts\n\n💡 Download all charts to track your fitness journey!",
+        missing: "If weekly charts are missing:\n\n1️⃣ Check membership status:\n   • Must be 'Active'\n   • Charts not available if expired\n\n2️⃣ Check your plan:\n   • Basic Plan: Workout charts only\n   • Premium/Elite: Workout + Diet charts\n   • Regular Monthly: Workout charts (if trainer assigned)\n\n3️⃣ Check trainer status:\n   • Trainer uploads when access is active\n   • Admin uploads when trainer expired\n   • Charts uploaded weekly\n\n4️⃣ If still missing:\n   • Contact your trainer\n   • Or use Contact page (/contact)\n   • Admin can upload charts manually",
     },
     dashboard: {
-        overview: "Your Dashboard (/dashboard) shows:\n\n📊 Membership Overview\n- Current plan and status\n- Start/end dates\n- Trainer information\n\n📈 Weekly Charts\n- All your fitness charts\n- Download options\n\n👤 Profile\n- Quick access to edit profile\n\n💬 Messages\n- Link to message trainer",
-        features: "Dashboard features:\n- Real-time membership status\n- Weekly charts viewing and download\n- Trainer information and messaging\n- Profile quick access\n- Membership history\n- Payment summary",
+        overview: "Your Dashboard (/dashboard) shows:\n\n📊 Membership Overview\n• Current plan and status\n• Start/end dates\n• Grace period alerts (if applicable)\n• Renewal options\n\n👨‍🏫 Trainer Information\n• Trainer name and details\n• Trainer access expiry date\n• Message button (if access active)\n• Renew trainer option (if expired)\n\n📈 Weekly Charts\n• All your fitness charts\n• Download options\n• Week-by-week tracking\n\n📄 Invoices\n• Download all invoices\n• View payment history\n• Invoice types (Initial, Renewal, Trainer Renewal)\n\n👤 Profile\n• Quick access to edit profile\n\n💬 Messages\n• Link to message trainer (if access active)",
+        features: "Dashboard features:\n\n✅ Real-time updates:\n• Membership status changes\n• Payment verification\n• Trainer assignment\n• New charts uploaded\n\n📊 Information display:\n• Membership details\n• Trainer information\n• Weekly charts\n• Invoice downloads\n• Payment history\n\n🔄 Actions available:\n• Renew membership (if in grace period)\n• Renew trainer (if expired)\n• Message trainer (if access active)\n• Download charts and invoices\n• Edit profile\n\n⚠️ Alerts:\n• Grace period warnings\n• Expiry notifications\n• Renewal reminders",
     },
     profile: {
         management: "Manage your profile at:\n/profile\n\nYou can:\n- View your profile\n- Edit personal information\n- Update full name\n- Change phone number\n- Update address\n- Change avatar/profile picture\n- Update date of birth\n- Change gender\n\nAll changes are saved automatically.",
@@ -183,8 +187,14 @@ function generateResponse(message: string, conversationHistory: Array<{ role: st
     if (lowerMessage.includes('expired') || lowerMessage.includes('expire') || lowerMessage === 'expired' || lowerMessage === 'expire') {
         return KNOWLEDGE_BASE.membership.expired;
     }
-    if (lowerMessage.includes('renew') || lowerMessage.includes('renewal') || lowerMessage === 'renew' || lowerMessage === 'renewal') {
+    if ((lowerMessage.includes('renew') || lowerMessage.includes('renewal')) &&
+        !lowerMessage.includes('trainer') &&
+        lowerMessage !== 'renew' && lowerMessage !== 'renewal') {
         return KNOWLEDGE_BASE.membership.renewal;
+    }
+    if (lowerMessage === 'renew' || lowerMessage === 'renewal') {
+        // Default to membership renewal, but mention trainer renewal option
+        return KNOWLEDGE_BASE.membership.renewal + "\n\n💡 Note: Trainer renewal is separate. Ask 'trainer renewal' for details.";
     }
     if (lowerMessage.includes('my plans') || lowerMessage.includes('all memberships') || lowerMessage.includes('membership history') ||
         lowerMessage.includes('my membership') || lowerMessage === 'myplans' || lowerMessage === 'my-plans') {
@@ -236,7 +246,7 @@ function generateResponse(message: string, conversationHistory: Array<{ role: st
         return KNOWLEDGE_BASE.trainer.notAssigned;
     }
     if (lowerMessage.includes('renew trainer') || (lowerMessage.includes('trainer') && lowerMessage.includes('renew')) ||
-        lowerMessage.includes('trainer renewal')) {
+        lowerMessage.includes('trainer renewal') || lowerMessage.includes('trainer access renew')) {
         return KNOWLEDGE_BASE.trainer.renew;
     }
     if (lowerMessage.includes('trainer addon') || (lowerMessage.includes('addon') && lowerMessage.includes('trainer')) ||
@@ -392,25 +402,54 @@ function generateResponse(message: string, conversationHistory: Array<{ role: st
         return KNOWLEDGE_BASE.features.page;
     }
 
+    // Invoice queries
+    if (lowerMessage.includes('invoice') || lowerMessage.includes('bill') || lowerMessage.includes('receipt') ||
+        lowerMessage === 'invoice' || lowerMessage === 'invoices' || lowerMessage === 'bill' || lowerMessage === 'receipt') {
+        return "Invoices are automatically generated after payment approval:\n\n📄 Invoice types:\n• Initial Purchase - First membership payment\n• Membership Renewal - Plan renewal payment\n• Trainer Access Renewal - Trainer renewal payment\n\n📥 Download invoices:\n• Dashboard → Invoices section\n• Click 'Download' on any invoice\n• Available as PDF files\n\n✅ All approved payments have invoices\n• Generated automatically\n• Stored securely\n• Available anytime\n\n💡 Can't find invoice? Check Dashboard or contact support via /contact.";
+    }
+
+    // Grace period queries
+    if (lowerMessage.includes('grace period') || lowerMessage.includes('grace') ||
+        (lowerMessage.includes('expired') && lowerMessage.includes('renew'))) {
+        return KNOWLEDGE_BASE.membership.gracePeriod;
+    }
+
+    // Regular Monthly plan queries
+    if (lowerMessage.includes('regular monthly') || lowerMessage.includes('regular plan') ||
+        lowerMessage.includes('monthly plan') || lowerMessage === 'regular') {
+        return KNOWLEDGE_BASE.membership.regularMonthly;
+    }
+
+    // Trainer expiry queries
+    if ((lowerMessage.includes('trainer') && lowerMessage.includes('expir')) ||
+        lowerMessage.includes('trainer access end') || lowerMessage.includes('trainer period')) {
+        return KNOWLEDGE_BASE.trainer.expiry;
+    }
+
+    // Admin approval timeline queries
+    if (lowerMessage.includes('how long') && (lowerMessage.includes('approval') || lowerMessage.includes('verify') || lowerMessage.includes('approve'))) {
+        return "Admin approval timeline:\n\n⏱️ Payment verification: 24-48 hours\n   • Usually approved within 24 hours\n   • Manual verification for security\n   • You'll receive notification when done\n\n⏱️ Membership activation: Immediate after approval\n   • Status changes to 'Active'\n   • Invoice generated automatically\n   • Trainer assigned (if applicable)\n\n⏱️ Trainer assignment: Within 24-48 hours\n   • After membership approval\n   • Based on trainer availability\n   • Notification sent when assigned\n\n💡 If it's been more than 48 hours:\n   • Check Dashboard for status\n   • Contact support via /contact\n   • Admin may need additional verification";
+    }
+
     // Additional common queries
     if (lowerMessage.includes('price') || lowerMessage.includes('cost') || lowerMessage.includes('fee') || lowerMessage.includes('charges') ||
         lowerMessage === 'price' || lowerMessage === 'cost' || lowerMessage === 'fee') {
-        return "Membership pricing varies by plan and duration:\n\n💪 Basic Plan - Check /membership for current prices\n⭐ Premium Plan - Includes 1 week free trainer\n🏆 Elite Plan - Includes 1 month free trainer\n\nVisit /membership page to see detailed pricing for all plans (3, 6, 12 months).";
+        return "Membership pricing:\n\n💪 Basic Plan:\n• Boys: ₹2,200 (3 months)\n• Girls: ₹2,400 (3 months)\n\n⭐ Premium Plan:\n• Boys: ₹4,000 (6 months)\n• Girls: ₹4,400 (6 months)\n• Includes 1 week free trainer\n\n🏆 Elite Plan:\n• Boys: ₹6,800 (12 months)\n• Girls: ₹7,800 (12 months)\n• Includes 1 month free trainer\n\n🏋️ Regular Monthly:\n• Boys: ₹1,200 first payment, ₹650/month after\n• Girls: ₹1,400 first payment, ₹700/month after\n\n💡 Trainer addon: Varies by trainer (check /trainers)\n\nVisit /membership for complete pricing details!";
     }
     if (lowerMessage.includes('duration') || lowerMessage.includes('how long') || lowerMessage === 'duration' || lowerMessage === 'period') {
         return "Membership durations available:\n- 1 month\n- 3 months\n- 6 months\n- 12 months\n\nChoose your preferred duration when purchasing a plan. Longer durations may have better value!";
     }
     if (lowerMessage.includes('active') || lowerMessage.includes('activated') || lowerMessage === 'active' || lowerMessage === 'activate') {
-        return "Your membership becomes active after:\n1. Payment is submitted\n2. Admin verifies payment\n3. Membership is approved\n\nCheck your Dashboard (/dashboard) to see current membership status. Active memberships show as 'Active' status.";
+        return "Membership activation process:\n\n1️⃣ Payment submitted:\n   • Upload screenshot + transaction ID\n   • Status: 'Pending'\n\n2️⃣ Admin verification:\n   • Manual verification (24-48 hours)\n   • Payment checked and approved\n\n3️⃣ Membership activated:\n   • Status changes to 'Active'\n   • Invoice generated automatically\n   • Trainer assigned (if applicable)\n   • Full access granted\n\n📊 Check status:\n   • Dashboard → Membership status\n   • Real-time updates\n   • Notification sent when activated\n\n✅ Active membership means:\n   • Full access to all features\n   • Trainer access (if assigned)\n   • Weekly charts available\n   • Can message trainer (if access active)";
     }
     if (lowerMessage.includes('rejected') || lowerMessage.includes('reject') || lowerMessage === 'rejected' || lowerMessage === 'reject') {
-        return "If your membership was rejected:\n1. Check the reason in your Dashboard\n2. Contact support through /contact page\n3. You may need to resubmit payment\n4. Ensure payment screenshot and transaction ID are correct\n\nOur support team can help resolve the issue.";
+        return "If your payment was rejected:\n\n1️⃣ Check reason:\n   • Dashboard → Payment status\n   • View rejection reason\n\n2️⃣ Common reasons:\n   • Payment screenshot unclear\n   • Transaction ID mismatch\n   • Payment amount incorrect\n   • Duplicate payment\n\n3️⃣ Next steps:\n   • Contact support via /contact\n   • Resubmit payment if needed\n   • Ensure screenshot and transaction ID are correct\n\n💡 Support team will help resolve the issue!";
     }
     if (lowerMessage.includes('transaction') || lowerMessage.includes('transaction id') || lowerMessage === 'transaction' || lowerMessage === 'txn') {
         return "Transaction ID is required when submitting payment:\n1. After making payment via QR code\n2. Find transaction ID in your payment app\n3. Enter it on payment page (/membership/payment)\n4. Upload payment screenshot\n5. Submit for verification\n\nTransaction ID helps us verify your payment quickly.";
     }
     if (lowerMessage.includes('notification') || lowerMessage.includes('notify') || lowerMessage === 'notification' || lowerMessage === 'notifications') {
-        return "You'll receive notifications for:\n- Membership approval\n- Payment verification\n- Trainer assignment\n- New weekly charts\n- Messages from trainer\n\nCheck your Dashboard and notification bell for updates!";
+        return "Notifications you'll receive:\n\n✅ Membership notifications:\n• Payment submitted\n• Payment verified\n• Membership approved\n• Membership expired\n• Grace period started\n• Grace period ending\n\n👨‍🏫 Trainer notifications:\n• Trainer assigned\n• Trainer access expiring\n• Trainer grace period started\n• Trainer access expired\n\n📊 Chart notifications:\n• New weekly chart uploaded\n• Chart reminder (if missing)\n\n💬 Message notifications:\n• New message from trainer\n\n📄 Invoice notifications:\n• Invoice generated\n\n🔔 Check notifications:\n• Dashboard notification bell\n• Real-time updates\n• Email notifications (if enabled)\n\n💡 All notifications appear in Dashboard!";
     }
     if (lowerMessage.includes('address') || lowerMessage.includes('location') || lowerMessage.includes('where') || lowerMessage === 'address' || lowerMessage === 'location') {
         return "Gym address and contact details are available on:\n/contact page\n\nYou'll find:\n- Full gym address\n- Google Maps location\n- Contact phone number\n- Email address\n- Operating hours\n\nVisit /contact for complete information!";
@@ -425,13 +464,13 @@ function generateResponse(message: string, conversationHistory: Array<{ role: st
         return "Gym operating hours and timings are available on:\n/contact page\n\nVisit /contact to see:\n- Opening hours\n- Closing time\n- Days of operation\n- Special timings\n\nAll timing information is displayed there!";
     }
     if (lowerMessage.includes('basic') || lowerMessage === 'basic') {
-        return "Basic Plan features:\n- Online mode only\n- Workout charts included\n- No trainer included (can add as addon)\n- All membership durations available\n\nVisit /membership to see Basic Plan pricing and details!";
+        return "Basic Plan features:\n\n💪 Plan details:\n• Online mode only\n• Workout charts included\n• No trainer included (can add as addon)\n• Available: 3, 6, or 12 months\n\n💰 Pricing:\n• Boys: ₹2,200 (3 months)\n• Girls: ₹2,400 (3 months)\n\n✅ What you get:\n• Weekly workout plans\n• Progress tracking\n• Online support\n• Trainer addon available\n\nVisit /membership for complete details!";
     }
     if (lowerMessage.includes('premium') || lowerMessage === 'premium') {
-        return "Premium Plan features:\n- Includes 1 week FREE trainer access\n- Workout and diet charts\n- Trainer messaging\n- All membership durations available\n\nVisit /membership to see Premium Plan pricing and details!";
+        return "Premium Plan features:\n\n⭐ Plan details:\n• Online mode\n• 1 week FREE trainer access (included)\n• Workout + Diet charts\n• Available: 3, 6, or 12 months\n\n💰 Pricing:\n• Boys: ₹4,000 (6 months)\n• Girls: ₹4,400 (6 months)\n\n✅ What you get:\n• Weekly workout plans\n• Weekly diet plans\n• 1 week free trainer\n• Trainer messaging\n• Trainer addon available\n\nVisit /membership for complete details!";
     }
     if (lowerMessage.includes('elite') || lowerMessage === 'elite') {
-        return "Elite Plan features:\n- Includes 1 month FREE trainer access\n- Workout and diet charts\n- Trainer messaging\n- All membership durations available\n- Best value for long-term members\n\nVisit /membership to see Elite Plan pricing and details!";
+        return "Elite Plan features:\n\n🏆 Plan details:\n• Online mode\n• 1 month FREE trainer access (included)\n• Workout + Diet charts\n• Available: 3, 6, or 12 months\n• Best value for long-term\n\n💰 Pricing:\n• Boys: ₹6,800 (12 months)\n• Girls: ₹7,800 (12 months)\n\n✅ What you get:\n• Weekly workout plans\n• Weekly diet plans\n• 1 month free trainer\n• Trainer messaging\n• Trainer addon available\n• Priority support\n\nVisit /membership for complete details!";
     }
     if (lowerMessage.includes('workout') || lowerMessage === 'workout' || lowerMessage === 'workouts') {
         return "Workout charts:\n- Available for all plans\n- Uploaded weekly by trainer\n- View in Dashboard → Weekly Charts\n- Download as PDF/image\n- Track your fitness progress\n\nBasic plan gets workout charts, Premium/Elite get both workout and diet charts!";
@@ -452,13 +491,58 @@ function generateResponse(message: string, conversationHistory: Array<{ role: st
         return KNOWLEDGE_BASE.trainer.renew;
     }
 
+    // Invoice queries
+    if (lowerMessage.includes('invoice') || lowerMessage.includes('bill') || lowerMessage.includes('receipt') ||
+        lowerMessage === 'invoice' || lowerMessage === 'invoices' || lowerMessage === 'bill' || lowerMessage === 'receipt') {
+        return "Invoices are automatically generated after payment approval:\n\n📄 Invoice types:\n• Initial Purchase - First membership payment\n• Membership Renewal - Plan renewal payment\n• Trainer Access Renewal - Trainer renewal payment\n\n📥 Download invoices:\n• Dashboard → Invoices section\n• Click 'Download' on any invoice\n• Available as PDF files\n\n✅ All approved payments have invoices\n• Generated automatically\n• Stored securely\n• Available anytime\n\n💡 Can't find invoice? Check Dashboard or contact support via /contact.";
+    }
+
+    // Grace period queries
+    if (lowerMessage.includes('grace period') || lowerMessage.includes('grace') ||
+        (lowerMessage.includes('expired') && lowerMessage.includes('renew'))) {
+        return KNOWLEDGE_BASE.membership.gracePeriod;
+    }
+
+    // Regular Monthly plan queries
+    if (lowerMessage.includes('regular monthly') || lowerMessage.includes('regular plan') ||
+        lowerMessage.includes('monthly plan') || lowerMessage === 'regular') {
+        return KNOWLEDGE_BASE.membership.regularMonthly;
+    }
+
+    // Trainer expiry queries
+    if ((lowerMessage.includes('trainer') && lowerMessage.includes('expir')) ||
+        lowerMessage.includes('trainer access end') || lowerMessage.includes('trainer period')) {
+        return KNOWLEDGE_BASE.trainer.expiry;
+    }
+
+    // Admin approval timeline queries
+    if (lowerMessage.includes('how long') && (lowerMessage.includes('approval') || lowerMessage.includes('verify') || lowerMessage.includes('approve'))) {
+        return "Admin approval timeline:\n\n⏱️ Payment verification: 24-48 hours\n   • Usually approved within 24 hours\n   • Manual verification for security\n   • You'll receive notification when done\n\n⏱️ Membership activation: Immediate after approval\n   • Status changes to 'Active'\n   • Invoice generated automatically\n   • Trainer assigned (if applicable)\n\n⏱️ Trainer assignment: Within 24-48 hours\n   • After membership approval\n   • Based on trainer availability\n   • Notification sent when assigned\n\n💡 If it's been more than 48 hours:\n   • Check Dashboard for status\n   • Contact support via /contact\n   • Admin may need additional verification";
+    }
+
+    // Payment status queries
+    if (lowerMessage.includes('payment status') || (lowerMessage.includes('status') && lowerMessage.includes('payment'))) {
+        return KNOWLEDGE_BASE.payment.status;
+    }
+
+    // Eligibility queries
+    if (lowerMessage.includes('eligible') || lowerMessage.includes('can i renew') || lowerMessage.includes('when can i')) {
+        return "Renewal eligibility:\n\n✅ Membership renewal:\n• Status must be 'Grace Period'\n• 15 days after membership expiry\n• Renew from Dashboard\n• Complete payment process\n\n✅ Trainer renewal:\n• Membership must be 'Active'\n• Trainer access must be expired\n• At least 30 days remaining on membership\n• Renew trainer separately\n\n⚠️ Regular Monthly:\n• If membership expired, trainer revoked immediately\n• Must renew membership first\n• Trainer addon available on renewal\n\n💡 Check Dashboard for eligibility status and renewal options!";
+    }
+
+    // Blocked actions queries
+    if (lowerMessage.includes('cannot') || lowerMessage.includes('can\'t') || lowerMessage.includes('not allowed') ||
+        lowerMessage.includes('why can\'t') || lowerMessage.includes('blocked')) {
+        return "Actions that require admin approval:\n\n⏳ Cannot be automated:\n• Payment verification (manual admin check)\n• Membership approval (admin decision)\n• Trainer assignment (admin assigns)\n• Payment rejection (admin reviews)\n\n❌ Cannot do when:\n• Payment pending: Cannot submit another payment\n• Membership expired (grace period ended): Cannot renew\n• Trainer expired (grace period ended): Cannot renew trainer\n• Regular Monthly expired: Trainer access revoked immediately\n\n💡 What you CAN do:\n• Submit payment and wait for approval\n• Renew during grace period\n• Contact support via /contact\n• Check Dashboard for status\n\nFor admin actions, please wait for approval or contact support!";
+    }
+
     // Legal/complaint escalation
     if (lowerMessage.includes('legal') || lowerMessage.includes('complaint') || lowerMessage.includes('sue') || lowerMessage.includes('lawyer')) {
         return KNOWLEDGE_BASE.escalation;
     }
 
     // Default helpful response with more options
-    return "I can help you with:\n\n💪 Membership Plans\n- View plans (Basic, Premium, Elite)\n- Purchase membership\n- Check status\n- Renew membership\n- View all plans\n- Pricing information\n\n💳 Payment\n- QR code payment\n- Upload screenshot\n- Payment verification\n- Transaction ID\n\n👨‍🏫 Trainers\n- Trainer assignment\n- Message trainer\n- Trainer addon\n- Renew trainer\n\n📊 Weekly Charts\n- View charts\n- Download charts\n- Workout & diet plans\n\n📅 Classes\n- View class details\n- Class schedules\n\n🎁 Offers\n- Current promotions\n- Special deals\n\n👤 Profile\n- Edit profile\n- Update information\n- Change password\n\n🔐 Password\n- Forgot password? Contact admin\n- Change password? Go to Profile\n- Password requirements\n\n📞 Contact\n- Support & help\n- Gym information\n- Address & phone\n\n🏠 Dashboard\n- All features overview\n\n💡 Try asking:\n- \"payment\"\n- \"trainer\"\n- \"dashboard\"\n- \"password\"\n- \"plans\"\n\nWhat would you like to know more about? Ask me anything about the website!";
+    return "I can help you with:\n\n💪 Membership Plans\n• View plans (Basic, Premium, Elite, Regular Monthly)\n• Purchase membership\n• Check status\n• Renew membership (grace period)\n• Regular Monthly plan details\n• Pricing information\n\n💳 Payment & Invoices\n• QR code payment\n• Upload screenshot\n• Payment verification (24-48 hours)\n• Transaction ID\n• Download invoices\n• Payment status\n\n🔄 Renewals\n• Membership renewal (grace period)\n• Trainer renewal (separate process)\n• Renewal eligibility\n• Grace period rules\n\n👨‍🏫 Trainers\n• Trainer assignment\n• Message trainer (access rules)\n• Trainer addon\n• Renew trainer\n• Trainer expiry & grace period\n• Regular Monthly trainer rules\n\n📊 Weekly Charts\n• View charts\n• Download charts\n• Workout & diet plans\n• Chart availability by plan\n\n📄 Invoices\n• Download invoices\n• Invoice types\n• Invoice availability\n\n📅 Classes\n• View class details\n• Class schedules\n\n🎁 Offers\n• Current promotions\n• Special deals\n\n👤 Profile\n• Edit profile\n• Update information\n• Change password\n\n🔐 Password\n• Forgot password? Contact admin\n• Change password? Go to Profile\n• Password requirements\n\n📞 Contact\n• Support & help\n• Gym information\n• Address & phone\n\n🏠 Dashboard\n• All features overview\n• Status updates\n• Renewal options\n\n💡 Try asking:\n• \"invoice\"\n• \"grace period\"\n• \"trainer renewal\"\n• \"regular monthly\"\n• \"payment status\"\n• \"admin approval\"\n\nWhat would you like to know more about? Ask me anything about the website!";
 }
 
 export async function POST(request: NextRequest) {

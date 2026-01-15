@@ -8,6 +8,7 @@ import Navbar from '@/components/Navbar/Navbar'
 import Footer from '@/components/Footer/Footer'
 import Toast from '@/components/Toast/Toast'
 import { useToast } from '@/hooks/useToast'
+import { isInGymAddonAvailable, isTrainerAddonAvailable, getBasePlanType } from '@/lib/addonEligibility'
 import styles from './payment.module.css'
 
 interface Trainer {
@@ -62,6 +63,9 @@ function PaymentPageContent() {
     })
 
     const membershipId = searchParams.get('membershipId')
+    const renewalType = searchParams.get('renewalType') // 'trainer' for trainer renewal
+    const trainerId = searchParams.get('trainerId')
+    const durationMonths = searchParams.get('durationMonths')
 
     useEffect(() => {
         const fetchData = async () => {
@@ -84,9 +88,88 @@ function PaymentPageContent() {
             }
 
             setMembership(membershipData)
+
+            // Calculate renewal price for regular monthly plans
+            let renewalAmount = membershipData.price
+            if (renewalType === 'membership') {
+                const planName = membershipData.plan_name?.toLowerCase() || ''
+                const planType = membershipData.plan_type?.toLowerCase() || ''
+                // Check if it's a regular monthly plan (either by name or plan_type)
+                const isRegularMonthly = (planName.includes('regular') && planName.includes('monthly')) || 
+                                        planType === 'in_gym' || 
+                                        planName === 'regular monthly'
+                
+                console.log('[PAYMENT] Plan name:', planName, 'Plan type:', planType, 'Is regular monthly:', isRegularMonthly, 'Renewal type:', renewalType)
+                
+                if (isRegularMonthly) {
+                    // For regular monthly renewals, determine renewal price based on gender
+                    // Try multiple methods to determine gender:
+                    // 1. Check plan name for "boys" or "girls"
+                    // 2. Check user profile gender field
+                    // 3. Default based on original price
+                    
+                    let determinedGender: string | null = null
+                    
+                    // Method 1: Check plan name
+                    if (planName.includes('boys') || planName.includes('boy')) {
+                        determinedGender = 'boys'
+                    } else if (planName.includes('girls') || planName.includes('girl')) {
+                        determinedGender = 'girls'
+                    }
+                    
+                    // Method 2: Check user profile if plan name doesn't have gender
+                    if (!determinedGender) {
+                        try {
+                            const { data: { user } } = await supabase.auth.getUser()
+                            if (user) {
+                                const { data: profile, error: profileError } = await supabase
+                                    .from('profiles')
+                                    .select('gender')
+                                    .eq('id', user.id)
+                                    .single()
+
+                                console.log('[PAYMENT] Profile data:', profile, 'Error:', profileError)
+                                
+                                if (profile?.gender) {
+                                    determinedGender = profile.gender.toLowerCase()
+                                }
+                            }
+                        } catch (error) {
+                            console.error('[PAYMENT] Error fetching user gender:', error)
+                        }
+                    }
+                    
+                    console.log('[PAYMENT] Determined gender:', determinedGender)
+                    
+                    // Set renewal price based on gender
+                    if (determinedGender === 'boys' || determinedGender === 'male' || determinedGender === 'm') {
+                        console.log('[PAYMENT] Setting renewal amount to 650 (boys)')
+                        renewalAmount = 650 // Boys renewal price
+                    } else if (determinedGender === 'girls' || determinedGender === 'female' || determinedGender === 'f') {
+                        console.log('[PAYMENT] Setting renewal amount to 700 (girls)')
+                        renewalAmount = 700 // Girls renewal price
+                    } else {
+                        // Fallback: If original price is 1200, assume boys (650), if 1400, assume girls (700)
+                        if (membershipData.price === 1200) {
+                            console.log('[PAYMENT] Price is 1200, assuming boys plan, setting to 650')
+                            renewalAmount = 650
+                        } else if (membershipData.price === 1400) {
+                            console.log('[PAYMENT] Price is 1400, assuming girls plan, setting to 700')
+                            renewalAmount = 700
+                        } else {
+                            console.log('[PAYMENT] Cannot determine gender, using original price:', membershipData.price)
+                            renewalAmount = membershipData.price
+                        }
+                    }
+                } else {
+                    console.log('[PAYMENT] Not a regular monthly plan, using original price:', membershipData.price)
+                }
+            }
+
+            console.log('[PAYMENT] Final renewal amount:', renewalAmount, 'Original price:', membershipData.price)
             setPaymentData(prev => ({
                 ...prev,
-                amount: membershipData.price.toString()
+                amount: renewalAmount.toString()
             }))
 
             // Fetch active trainers with prices from database
@@ -194,6 +277,63 @@ function PaymentPageContent() {
             const { data: { session } } = await supabase.auth.getSession()
             if (!session) throw new Error('Not authenticated')
 
+            // Handle trainer renewal differently
+            if (renewalType === 'trainer' && trainerId && durationMonths) {
+                const submitResponse = await fetch(`/api/memberships/${membershipId}/renew-trainer`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session.access_token}`
+                    },
+                    body: JSON.stringify({
+                        transactionId: paymentData.transactionId,
+                        paymentDate: paymentData.paymentDate,
+                        amount: totalAmount,
+                        screenshotPath: screenshotPath,
+                        trainerId: trainerId,
+                        durationMonths: parseInt(durationMonths)
+                    })
+                })
+
+                if (!submitResponse.ok) {
+                    let errorMessage = 'Failed to submit trainer renewal payment';
+                    try {
+                        const errorData = await submitResponse.json();
+                        errorMessage = errorData.error || errorMessage;
+                        console.error('Error submitting trainer renewal payment:', errorData);
+                    } catch (parseError) {
+                        console.error('Error parsing error response:', parseError);
+                        const errorText = await submitResponse.text();
+                        errorMessage = errorText || errorMessage;
+                        console.error('Raw error response:', errorText);
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const submitResult = await submitResponse.json()
+                console.log('Trainer renewal payment submitted successfully:', submitResult)
+
+                // Send broadcast to admin
+                const adminChannel = supabase.channel('admin_notifications_bell')
+                await adminChannel.subscribe()
+                await new Promise(resolve => setTimeout(resolve, 150))
+                await adminChannel.send({
+                    type: 'broadcast',
+                    event: 'admin_notification',
+                    payload: {
+                        type: 'trainer_renewal_payment_submitted',
+                        content: `A user has submitted a trainer renewal payment. Please verify.`,
+                        membershipId: membershipId
+                    }
+                })
+                await adminChannel.unsubscribe()
+
+                showToast('Trainer renewal payment submitted successfully! Admin will verify and activate your trainer access soon. 🎉', 'success')
+                setTimeout(() => router.push('/dashboard'), 2000)
+                return
+            }
+
+            // Regular membership payment submission
             const submitResponse = await fetch(`/api/memberships/${membershipId}/submit-payment`, {
                 method: 'POST',
                 headers: {
@@ -261,20 +401,38 @@ function PaymentPageContent() {
 
     // Calculate addon prices
     // IMPORTANT:
-    // - For `in_gym` memberships (Regular Monthly), the membership price already includes joining/admission + 1st month.
+    // - For inherently in-gym plans (Regular Monthly), the membership price already includes joining/admission + 1st month.
     //   So we must NOT add admission fee again in payment breakdown or total.
-    // - For `online` memberships, user can optionally add in-gym access as an addon (admission fee).
-    const isInGymPlan = membership.plan_type === 'in_gym'
-    const inGymAddonPrice = !isInGymPlan && addons.inGym ? inGymAdmissionFee : 0
-    const trainerAddonPrice = addons.personalTrainer && addons.selectedTrainer
-        ? trainers.find(t => t.id === addons.selectedTrainer)?.price || 0
-        : 0
+    // - For online plans (or plans that can add in-gym access), user can optionally add in-gym access as an addon (admission fee).
+    // - For trainer renewals, use the amount from URL params
+    // Use base plan type (from plan configuration) instead of current membership state
+    const planConfig = {
+        planName: membership.plan_name || '',
+        planType: membership.plan_type || '',
+        durationMonths: membership.duration_months
+    };
+    const basePlanType = getBasePlanType(planConfig);
+    const isInherentlyInGymPlan = basePlanType === 'in_gym';
+    const inGymAddonPrice = !isInherentlyInGymPlan && addons.inGym ? inGymAdmissionFee : 0
+    
+    let trainerAddonPrice = 0
+    if (renewalType === 'trainer' && trainerId && durationMonths) {
+        // Trainer renewal: calculate from trainer price and duration
+        const trainer = trainers.find(t => t.id === trainerId)
+        trainerAddonPrice = trainer ? trainer.price * parseInt(durationMonths) : 0
+    } else {
+        // Regular trainer addon
+        trainerAddonPrice = addons.personalTrainer && addons.selectedTrainer
+            ? trainers.find(t => t.id === addons.selectedTrainer)?.price || 0
+            : 0
+    }
 
-    const basePlanPrice = parseFloat(paymentData.amount) || 0
+    const basePlanPrice = renewalType === 'trainer' ? 0 : (parseFloat(paymentData.amount) || 0)
     const totalAmount = basePlanPrice + inGymAddonPrice + trainerAddonPrice
 
     // Determine display plan type - if in-gym addon is selected, show as "In-Gym Training"
-    const displayPlanType = addons.inGym ? 'in_gym' : membership.plan_type
+    // Use base plan type for display, but show as in-gym if addon is selected
+    const displayPlanType = addons.inGym ? 'in_gym' : basePlanType
 
     // Get plan duration in months for display
     const getDurationText = () => {
@@ -311,8 +469,8 @@ function PaymentPageContent() {
                             <span className={styles.priceValue}>₹{basePlanPrice.toLocaleString()}</span>
                         </div>
 
-                        {/* Only show in-gym admission/addon fee if user selected in-gym as an addon on an online plan */}
-                        {!isInGymPlan && addons.inGym && (
+                        {/* Only show in-gym admission/addon fee if user selected in-gym as an addon and plan is not inherently in-gym */}
+                        {!isInherentlyInGymPlan && addons.inGym && (
                             <div className={styles.priceRow}>
                                 <span className={styles.priceLabel}>
                                     In-Gym Add-On (Admission Fee)
@@ -337,12 +495,22 @@ function PaymentPageContent() {
                     </div>
                 </div>
 
-                {/* Add-ons Section - Separate Container */}
+                {/* Add-ons Section - Separate Container - Hide for trainer renewals */}
+                {renewalType !== 'trainer' && (
                 <div className={styles.addonsContainer}>
                     <h2 className={styles.addonsTitle}>Add-On Options</h2>
                     <div className={styles.addonsSection}>
-                        {/* In-Gym Add-on - Only show for online plans */}
-                        {membership.plan_type === 'online' && (
+                        {/* In-Gym Add-on - Show based on plan configuration, not historical state */}
+                        {(() => {
+                            // Determine eligibility based on plan configuration, not current membership state
+                            // This ensures addon is available on every renewal, regardless of previous selections
+                            const planConfig = {
+                                planName: membership.plan_name || '',
+                                planType: membership.plan_type || '',
+                                durationMonths: membership.duration_months
+                            };
+                            return isInGymAddonAvailable(planConfig);
+                        })() && (
                             <div className={styles.addonCard}>
                                 <label className={styles.addonLabel}>
                                     <input
@@ -360,7 +528,17 @@ function PaymentPageContent() {
                             </div>
                         )}
 
-                        {/* Personal Trainer Add-on */}
+                        {/* Personal Trainer Add-on - Always available for all plans */}
+                        {(() => {
+                            // Determine eligibility based on plan configuration
+                            // Trainer addon is always available, but we check for consistency
+                            const planConfig = {
+                                planName: membership.plan_name || '',
+                                planType: membership.plan_type || '',
+                                durationMonths: membership.duration_months
+                            };
+                            return isTrainerAddonAvailable(planConfig);
+                        })() && (
                         <div className={styles.addonCard}>
                             <label className={styles.addonLabel}>
                                 <input
@@ -413,6 +591,7 @@ function PaymentPageContent() {
                                 </div>
                             )}
                         </div>
+                        )}
                     </div>
 
                     {/* Total Amount Display after Add-ons */}
@@ -423,6 +602,7 @@ function PaymentPageContent() {
                         </div>
                     </div>
                 </div>
+                )}
 
                 <form onSubmit={handleSubmit} className={styles.form}>
                     {/* QR Code Section */}

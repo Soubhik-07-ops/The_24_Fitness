@@ -2,10 +2,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { CheckCircle, XCircle, Clock, Download, Eye, FileText, Image as ImageIcon, FileDown, AlertCircle, Trash2, ChevronDown, MessageSquare, User } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Download, Eye, FileText, Image as ImageIcon, FileDown, AlertCircle, Trash2, ChevronDown, MessageSquare, User, RefreshCw, Check, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import styles from './memberships.module.css';
 import cardStyles from '@/components/UserCard/UserCard.module.css';
+import { getMembershipExpirationStatus as getMembershipExpirationStatusUtil, getTrainerPeriodExpirationStatus as getTrainerPeriodExpirationStatusUtil } from '@/lib/membershipUtils';
+import { getRenewalBadgeType } from '@/lib/renewalEligibility';
 
 interface MembershipAddon {
     id: number;
@@ -39,9 +41,11 @@ interface Membership {
     trainer_assigned?: boolean;
     trainer_id?: string | null;
     trainer_period_end?: string | null;
+    trainer_grace_period_end?: string | null;
     trainer_addon?: boolean;
     membership_start_date?: string | null;
     membership_end_date?: string | null;
+    grace_period_end?: string | null;
     plan_mode?: string;
     trainer_name?: string | null;
     all_payments?: any[];
@@ -73,6 +77,8 @@ export default function MembershipsManagement() {
     const [loadingPayments, setLoadingPayments] = useState(false);
     const [membershipHistory, setMembershipHistory] = useState<any>(null);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    const [invoices, setInvoices] = useState<any[]>([]);
+    const [loadingInvoices, setLoadingInvoices] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectReason, setRejectReason] = useState('');
@@ -178,6 +184,83 @@ export default function MembershipsManagement() {
         }
     };
 
+    const handleApproveTrainerRenewal = async (membershipId: number) => {
+        if (!confirm('Are you sure you want to approve this trainer renewal? This will extend the user\'s trainer access period.')) {
+            return;
+        }
+
+        setProcessing(membershipId);
+        setError(null);
+        try {
+            const response = await fetch(`/api/admin/memberships/${membershipId}/approve-trainer-renewal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to approve trainer renewal');
+            }
+
+            setError(null);
+            alert('Trainer renewal approved successfully!');
+            await fetchMemberships();
+
+            // Refresh selected membership if modal is open
+            if (showDetailsModal && selectedMembership?.id === membershipId) {
+                await handleViewDetails(selectedMembership);
+            }
+        } catch (error: any) {
+            console.error('Error approving trainer renewal:', error);
+            setError(`Failed to approve trainer renewal: ${error.message}`);
+            alert(`Error: ${error.message}`);
+        } finally {
+            setProcessing(null);
+        }
+    };
+
+    const handleRejectTrainerRenewal = async (membershipId: number) => {
+        const reason = prompt('Please provide a reason for rejecting this trainer renewal payment:');
+        if (!reason || !reason.trim()) {
+            alert('Rejection reason is required.');
+            return;
+        }
+
+        setProcessing(membershipId);
+        setError(null);
+        try {
+            const response = await fetch(`/api/admin/memberships/${membershipId}/reject-trainer-renewal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ reason: reason.trim() })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to reject trainer renewal');
+            }
+
+            setError(null);
+            alert('Trainer renewal payment rejected successfully!');
+            await fetchMemberships();
+
+            // Refresh selected membership if modal is open
+            if (showDetailsModal && selectedMembership?.id === membershipId) {
+                await handleViewDetails(selectedMembership);
+            }
+        } catch (error: any) {
+            console.error('Error rejecting trainer renewal:', error);
+            setError(`Failed to reject trainer renewal: ${error.message}`);
+            alert(`Error: ${error.message}`);
+        } finally {
+            setProcessing(null);
+        }
+    };
+
 
 
     const handleRejectClick = (membershipId: number) => {
@@ -231,6 +314,7 @@ export default function MembershipsManagement() {
         setScreenshotUrl(null);
         setAllPayments([]);
         setMembershipHistory(null);
+        setInvoices([]);
 
         // Fetch all payments with screenshots
         setLoadingPayments(true);
@@ -269,6 +353,24 @@ export default function MembershipsManagement() {
             console.error('Error fetching membership history:', error);
         } finally {
             setLoadingHistory(false);
+        }
+
+        // Fetch invoices
+        setLoadingInvoices(true);
+        try {
+            const invoicesResponse = await fetch(`/api/memberships/${membership.id}/invoices`, {
+                credentials: 'include'
+            });
+            if (invoicesResponse.ok) {
+                const invoicesData = await invoicesResponse.json();
+                setInvoices(invoicesData.invoices || []);
+            } else {
+                console.error('Failed to fetch invoices:', await invoicesResponse.text());
+            }
+        } catch (error) {
+            console.error('Error fetching invoices:', error);
+        } finally {
+            setLoadingInvoices(false);
         }
 
         // Fetch screenshot
@@ -393,37 +495,154 @@ export default function MembershipsManagement() {
         }
     };
 
-    const exportToCSV = () => {
-        const headers = ['ID', 'User Name', 'User Email', 'Plan Type', 'Plan Name', 'Duration', 'Price', 'Status', 'Created At'];
-        const rows: any[] = [];
+    // Format date to DD-MMM-YYYY (e.g., 13-Jan-2026)
+    const formatDateForCSV = (dateString: string | null | undefined): string => {
+        if (!dateString) return '';
+        try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) return '';
+            const day = date.getDate().toString().padStart(2, '0');
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const month = months[date.getMonth()];
+            const year = date.getFullYear();
+            return `${day}-${month}-${year}`;
+        } catch {
+            return '';
+        }
+    };
 
-        userGroups.forEach(userGroup => {
-            userGroup.memberships.forEach(m => {
-                rows.push([
-                    m.id,
-                    m.user_name || 'N/A',
-                    m.user_email || 'N/A',
-                    m.plan_type,
-                    m.plan_name,
-                    `${m.duration_months} months`,
-                    `₹${m.price.toLocaleString()}`,
-                    m.status,
-                    formatDate(m.created_at)
-                ]);
+    // Format currency to plain number (no ₹ symbol, with commas)
+    const formatCurrencyForCSV = (amount: number | null | undefined): string => {
+        if (amount === null || amount === undefined) return '';
+        return amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    };
+
+    // Capitalize enum values for human readability
+    const capitalizeEnum = (value: string | null | undefined): string => {
+        if (!value) return '';
+        return value
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+    };
+
+    // Format plan type for display
+    const formatPlanType = (planType: string | null | undefined): string => {
+        if (!planType) return '';
+        if (planType === 'in_gym') return 'In-Gym';
+        return planType.charAt(0).toUpperCase() + planType.slice(1);
+    };
+
+    // Format plan name (capitalize first letter)
+    const formatPlanName = (planName: string | null | undefined): string => {
+        if (!planName) return '';
+        return planName
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+    };
+
+    // Get gender from form data
+    const getGenderFromFormData = (formData: any): string => {
+        if (!formData) return '';
+        const gender = formData.personalInformation?.gender || formData.gender || '';
+        if (!gender) return '';
+        return gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase();
+    };
+
+    // Get addon information as readable string
+    const getAddonsString = (addons: MembershipAddon[] | undefined): string => {
+        if (!addons || addons.length === 0) return 'None';
+        const addonTypes = addons
+            .filter(addon => addon.status === 'active')
+            .map(addon => {
+                if (addon.addon_type === 'personal_trainer') return 'Trainer';
+                if (addon.addon_type === 'in_gym') return 'In-Gym';
+                return capitalizeEnum(addon.addon_type);
             });
-        });
+        return addonTypes.length > 0 ? addonTypes.join(', ') : 'None';
+    };
 
-        const csvContent = [
-            headers.join(','),
-            ...rows.map(row => row.map((cell: any) => `"${cell}"`).join(','))
-        ].join('\n');
+    // Get trainer status
+    const getTrainerStatus = (membership: Membership): string => {
+        if (!membership.trainer_assigned || !membership.trainer_id) return 'Not Assigned';
+        if (!membership.trainer_period_end) return 'Active (No End Date)';
 
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `memberships_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
+        const periodEnd = new Date(membership.trainer_period_end);
+        const now = new Date();
+
+        if (periodEnd > now) {
+            return 'Active';
+        } else if (membership.trainer_grace_period_end) {
+            const graceEnd = new Date(membership.trainer_grace_period_end);
+            if (now <= graceEnd) {
+                return 'Grace Period';
+            }
+        }
+        return 'Expired';
+    };
+
+    // Calculate total paid (sum of all verified payments)
+    const calculateTotalPaid = (membership: Membership): number => {
+        if (!membership.all_payments || membership.all_payments.length === 0) return 0;
+        return membership.all_payments
+            .filter((p: any) => p.status === 'verified')
+            .reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0);
+    };
+
+    // Calculate pending amount (sum of all pending payments)
+    const calculatePendingAmount = (membership: Membership): number => {
+        if (!membership.all_payments || membership.all_payments.length === 0) return 0;
+        return membership.all_payments
+            .filter((p: any) => p.status === 'pending')
+            .reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0);
+    };
+
+    // Escape CSV cell value (handle quotes, commas, newlines)
+    const escapeCSVValue = (value: any): string => {
+        if (value === null || value === undefined) return '';
+        const stringValue = String(value);
+        // If value contains comma, quote, or newline, wrap in quotes and escape quotes
+        if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+            return `"${stringValue.replace(/"/g, '""')}"`;
+        }
+        return stringValue;
+    };
+
+    const exportToExcel = async () => {
+        try {
+            // Call the server-side API route to generate the Excel file
+            const response = await fetch('/api/admin/memberships/export-excel', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to generate Excel file');
+            }
+
+            // Get the Excel file as blob
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+
+            // Get filename from Content-Disposition header or use default
+            const contentDisposition = response.headers.get('Content-Disposition');
+            const filename = contentDisposition
+                ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || `24Fitness_Memberships_${new Date().toISOString().split('T')[0]}.xlsx`
+                : `24Fitness_Memberships_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        } catch (error: any) {
+            console.error('Error generating Excel file:', error);
+            alert(error.message || 'Failed to generate Excel file. Please try again.');
+        }
     };
 
     const formatDate = (dateString: string) => {
@@ -435,29 +654,10 @@ export default function MembershipsManagement() {
         });
     };
 
-    // Check if membership is expiring soon or expired
-    const getMembershipExpirationStatus = (membership: Membership): {
-        isExpiringSoon: boolean;
-        isExpired: boolean;
-        daysRemaining: number | null;
-    } => {
+    // Check if membership is expiring soon or expired (using centralized utility)
+    const getMembershipExpirationStatus = (membership: Membership) => {
         const endDateStr = membership.membership_end_date || membership.end_date;
-        if (!endDateStr) {
-            return { isExpiringSoon: false, isExpired: false, daysRemaining: null };
-        }
-
-        const endDate = new Date(endDateStr);
-        const now = new Date();
-        const diffTime = endDate.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (diffDays < 0) {
-            return { isExpiringSoon: false, isExpired: true, daysRemaining: Math.abs(diffDays) };
-        } else if (diffDays <= 4) {
-            return { isExpiringSoon: true, isExpired: false, daysRemaining: diffDays };
-        }
-
-        return { isExpiringSoon: false, isExpired: false, daysRemaining: diffDays };
+        return getMembershipExpirationStatusUtil(endDateStr);
     };
 
     // Check if trainer period is expiring soon or expired
@@ -496,30 +696,15 @@ export default function MembershipsManagement() {
         }
     };
 
-    const getTrainerPeriodExpirationStatus = (membership: Membership): {
-        isExpiringSoon: boolean;
-        isExpired: boolean;
-        daysRemaining: number | null;
-    } => {
+    const getTrainerPeriodExpirationStatus = (membership: Membership) => {
         if (!membership.trainer_assigned) {
             return { isExpiringSoon: false, isExpired: false, daysRemaining: null };
         }
 
-        const endDate = getEffectiveTrainerPeriodEnd(membership);
-        if (!endDate) {
-            return { isExpiringSoon: false, isExpired: false, daysRemaining: null };
-        }
+        // Use the same UTC-based calculation as user dashboard
         const now = new Date();
-        const diffTime = endDate.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (diffDays < 0) {
-            return { isExpiringSoon: false, isExpired: true, daysRemaining: Math.abs(diffDays) };
-        } else if (diffDays <= 4) {
-            return { isExpiringSoon: true, isExpired: false, daysRemaining: diffDays };
-        }
-
-        return { isExpiringSoon: false, isExpired: false, daysRemaining: diffDays };
+        const endDate = membership.trainer_period_end;
+        return getTrainerPeriodExpirationStatusUtil(endDate, now);
     };
 
     // Group memberships by user
@@ -594,9 +779,9 @@ export default function MembershipsManagement() {
                         Review and manage all membership applications ({memberships.length} total)
                     </p>
                 </div>
-                <button onClick={exportToCSV} className={styles.primaryButton}>
+                <button onClick={exportToExcel} className={styles.primaryButton}>
                     <Download size={20} />
-                    Export to CSV
+                    Export to Excel
                 </button>
             </div>
 
@@ -672,17 +857,24 @@ export default function MembershipsManagement() {
                         const isExpanded = expandedUsers.has(userGroup.user_id);
                         const pendingCount = userGroup.memberships.filter(m => m.status === 'pending').length;
                         const activeCount = userGroup.memberships.filter(m => m.status === 'active').length;
-                        // Calculate total: base price + active/pending addons for each membership
+                        // Calculate total: sum of all verified payments (matching modal calculation)
                         const totalAmount = userGroup.memberships.reduce((sum, m) => {
+                            // Use all_payments if available to match modal calculation
+                            if (m.all_payments && Array.isArray(m.all_payments) && m.all_payments.length > 0) {
+                                const verifiedPaymentsTotal = m.all_payments
+                                    .filter((p: any) => p.status === 'verified')
+                                    .reduce((paymentSum: number, payment: any) => {
+                                        return paymentSum + (parseFloat(payment.amount) || 0);
+                                    }, 0);
+                                return sum + verifiedPaymentsTotal;
+                            }
+                            // Fallback: base price + active/pending addons (for backward compatibility)
                             const basePrice = m.price || 0;
-                            // Include both active and pending addons (pending ones are being paid for)
                             const relevantAddons = (m.addons || []).filter((a: any) =>
                                 a.status === 'active' || a.status === 'pending'
                             );
                             const addonsTotal = relevantAddons
                                 .reduce((addonSum: number, addon: any) => addonSum + (parseFloat(addon.price) || 0), 0);
-                            // NOTE: For Regular Monthly (in_gym), the membership price already includes joining/admission.
-                            // For online->in_gym addon, the admission fee is already captured as an addon row.
                             return sum + basePrice + addonsTotal;
                         }, 0);
 
@@ -1143,14 +1335,13 @@ export default function MembershipsManagement() {
                                             <span className={styles.detailLabel} style={{ fontWeight: 'bold', fontSize: '1.1em' }}>Total Payment Amount:</span>
                                             <span className={styles.detailValue} style={{ fontWeight: 'bold', fontSize: '1.1em', color: '#22c55e' }}>
                                                 ₹{(() => {
-                                                    const basePrice = selectedMembership.price || 0;
-                                                    // Include both active and pending addons (pending ones are being paid for)
-                                                    const relevantAddons = (selectedMembership.addons || []).filter((a: any) =>
-                                                        a.status === 'active' || a.status === 'pending'
-                                                    );
-                                                    const addonsTotal = relevantAddons
-                                                        .reduce((sum: number, addon: any) => sum + (parseFloat(addon.price) || 0), 0);
-                                                    return (basePrice + addonsTotal).toLocaleString();
+                                                    // Calculate total from verified payments only (exclude rejected/pending)
+                                                    const totalPaid = allPayments
+                                                        .filter((payment: any) => payment.status === 'verified')
+                                                        .reduce((sum: number, payment: any) => {
+                                                            return sum + (parseFloat(payment.amount) || 0);
+                                                        }, 0);
+                                                    return totalPaid.toLocaleString();
                                                 })()}
                                             </span>
                                         </div>
@@ -1220,22 +1411,84 @@ export default function MembershipsManagement() {
                                                                         </div>
                                                                     )}
                                                                 </div>
-                                                                {payment.screenshotUrl ? (
-                                                                    <a
-                                                                        href={payment.screenshotUrl}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className={styles.screenshotLink}
-                                                                        style={{ marginLeft: 'auto' }}
-                                                                    >
-                                                                        <ImageIcon size={16} />
-                                                                        View Screenshot
-                                                                    </a>
-                                                                ) : payment.payment_screenshot_url ? (
-                                                                    <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>Screenshot unavailable</span>
-                                                                ) : (
-                                                                    <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>No screenshot</span>
-                                                                )}
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto' }}>
+                                                                    {payment.screenshotUrl ? (
+                                                                        <a
+                                                                            href={payment.screenshotUrl}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className={styles.screenshotLink}
+                                                                        >
+                                                                            <ImageIcon size={16} />
+                                                                            View Screenshot
+                                                                        </a>
+                                                                    ) : payment.payment_screenshot_url ? (
+                                                                        <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>Screenshot unavailable</span>
+                                                                    ) : (
+                                                                        <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>No screenshot</span>
+                                                                    )}
+                                                                    {/* Approve/Reject buttons for pending payments */}
+                                                                    {payment.status === 'pending' && (
+                                                                        <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '0.5rem' }}>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    const isTrainerRenewal = payment.paymentType === 'trainer_renewal';
+                                                                                    if (isTrainerRenewal) {
+                                                                                        handleApproveTrainerRenewal(selectedMembership.id);
+                                                                                    } else {
+                                                                                        handleApprove(selectedMembership.id);
+                                                                                    }
+                                                                                }}
+                                                                                disabled={processing === selectedMembership.id}
+                                                                                style={{
+                                                                                    padding: '0.375rem 0.75rem',
+                                                                                    backgroundColor: '#10b981',
+                                                                                    color: 'white',
+                                                                                    border: 'none',
+                                                                                    borderRadius: '0.375rem',
+                                                                                    cursor: processing === selectedMembership.id ? 'not-allowed' : 'pointer',
+                                                                                    opacity: processing === selectedMembership.id ? 0.6 : 1,
+                                                                                    fontSize: '0.75rem',
+                                                                                    fontWeight: '600',
+                                                                                    display: 'inline-flex',
+                                                                                    alignItems: 'center',
+                                                                                    gap: '0.25rem'
+                                                                                }}
+                                                                            >
+                                                                                <Check size={14} />
+                                                                                Approve
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    const isTrainerRenewal = payment.paymentType === 'trainer_renewal';
+                                                                                    if (isTrainerRenewal) {
+                                                                                        handleRejectTrainerRenewal(selectedMembership.id);
+                                                                                    } else {
+                                                                                        handleRejectClick(selectedMembership.id);
+                                                                                    }
+                                                                                }}
+                                                                                disabled={processing === selectedMembership.id}
+                                                                                style={{
+                                                                                    padding: '0.375rem 0.75rem',
+                                                                                    backgroundColor: '#ef4444',
+                                                                                    color: 'white',
+                                                                                    border: 'none',
+                                                                                    borderRadius: '0.375rem',
+                                                                                    cursor: processing === selectedMembership.id ? 'not-allowed' : 'pointer',
+                                                                                    opacity: processing === selectedMembership.id ? 0.6 : 1,
+                                                                                    fontSize: '0.75rem',
+                                                                                    fontWeight: '600',
+                                                                                    display: 'inline-flex',
+                                                                                    alignItems: 'center',
+                                                                                    gap: '0.25rem'
+                                                                                }}
+                                                                            >
+                                                                                <X size={14} />
+                                                                                Reject
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -1246,6 +1499,154 @@ export default function MembershipsManagement() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Invoices Section */}
+                                <div className={styles.detailSection}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                                        <h3 style={{ margin: 0 }}>Invoices</h3>
+                                        {invoices.length > 0 && (
+                                            <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                                                {invoices.length} {invoices.length === 1 ? 'invoice' : 'invoices'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {loadingInvoices ? (
+                                        <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>Loading invoices...</span>
+                                    ) : invoices.length === 0 ? (
+                                        <div style={{ padding: '1rem', background: '#f9fafb', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>
+                                            <p style={{ margin: 0, fontSize: '0.875rem', color: '#6b7280' }}>
+                                                No invoices available. Invoices are generated automatically after payment approval.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                            {invoices.map((invoice: any) => {
+                                                const invoiceTypeLabel = invoice.invoice_type === 'initial'
+                                                    ? 'Initial Purchase'
+                                                    : invoice.invoice_type === 'renewal'
+                                                        ? 'Membership Plan Renewal'
+                                                        : invoice.invoice_type === 'trainer_renewal'
+                                                            ? 'Trainer Access Renewal'
+                                                            : 'Payment';
+                                                const invoiceTypeColor = invoice.invoice_type === 'initial'
+                                                    ? '#3b82f6'
+                                                    : invoice.invoice_type === 'renewal'
+                                                        ? '#f59e0b'
+                                                        : '#10b981';
+                                                return (
+                                                    <div
+                                                        key={invoice.id}
+                                                        style={{
+                                                            padding: '0.875rem',
+                                                            background: '#f9fafb',
+                                                            border: '1px solid #e5e7eb',
+                                                            borderRadius: '0.5rem',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            gap: '1rem'
+                                                        }}
+                                                    >
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                                                                <span style={{
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: 600,
+                                                                    padding: '0.25rem 0.5rem',
+                                                                    borderRadius: '9999px',
+                                                                    background: `${invoiceTypeColor}15`,
+                                                                    color: invoiceTypeColor,
+                                                                    border: `1px solid ${invoiceTypeColor}30`
+                                                                }}>
+                                                                    {invoiceTypeLabel}
+                                                                </span>
+                                                                <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 600 }}>
+                                                                    {invoice.invoice_number}
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ fontSize: '0.8125rem', color: '#4b5563', marginBottom: '0.25rem' }}>
+                                                                ₹{parseFloat(invoice.amount).toLocaleString()} • {formatDate(invoice.created_at)}
+                                                            </div>
+                                                            {invoice.created_by && (
+                                                                <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                                                                    Approved by: {invoice.created_by}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                            <a
+                                                                href={invoice.file_url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '0.375rem',
+                                                                    padding: '0.5rem 0.875rem',
+                                                                    background: '#3b82f6',
+                                                                    color: 'white',
+                                                                    border: 'none',
+                                                                    borderRadius: '0.5rem',
+                                                                    fontSize: '0.8125rem',
+                                                                    fontWeight: 600,
+                                                                    textDecoration: 'none',
+                                                                    cursor: 'pointer',
+                                                                    transition: 'background 0.2s'
+                                                                }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.background = '#2563eb'}
+                                                                onMouseLeave={(e) => e.currentTarget.style.background = '#3b82f6'}
+                                                            >
+                                                                <Download size={14} />
+                                                                Download
+                                                            </a>
+                                                            <button
+                                                                onClick={async () => {
+                                                                    if (!confirm(`Are you sure you want to delete invoice ${invoice.invoice_number}? This action cannot be undone.`)) {
+                                                                        return;
+                                                                    }
+                                                                    try {
+                                                                        const response = await fetch(`/api/admin/invoices/${invoice.id}`, {
+                                                                            method: 'DELETE',
+                                                                            credentials: 'include'
+                                                                        });
+                                                                        if (response.ok) {
+                                                                            setInvoices(prev => prev.filter((inv: any) => inv.id !== invoice.id));
+                                                                            alert('Invoice deleted successfully');
+                                                                        } else {
+                                                                            const error = await response.json();
+                                                                            throw new Error(error.error || 'Failed to delete invoice');
+                                                                        }
+                                                                    } catch (error: any) {
+                                                                        alert(`Error: ${error.message}`);
+                                                                    }
+                                                                }}
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '0.375rem',
+                                                                    padding: '0.5rem 0.875rem',
+                                                                    background: '#ef4444',
+                                                                    color: 'white',
+                                                                    border: 'none',
+                                                                    borderRadius: '0.5rem',
+                                                                    fontSize: '0.8125rem',
+                                                                    fontWeight: 600,
+                                                                    cursor: 'pointer',
+                                                                    transition: 'background 0.2s'
+                                                                }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+                                                                onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                                                            >
+                                                                <Trash2 size={14} />
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
 
                                 <div className={styles.detailSection}>
                                     <h3>Status</h3>
@@ -1298,10 +1699,7 @@ export default function MembershipsManagement() {
                                                 <div className={styles.detailRow}>
                                                     <span className={styles.detailLabel}>Trainer Period End:</span>
                                                     <span className={styles.detailValue}>
-                                                        {(() => {
-                                                            const effectiveEnd = getEffectiveTrainerPeriodEnd(selectedMembership);
-                                                            return effectiveEnd ? formatDate(effectiveEnd.toISOString()) : formatDate(selectedMembership.trainer_period_end);
-                                                        })()}
+                                                        {formatDate(selectedMembership.trainer_period_end)}
                                                         {(() => {
                                                             const trainerExpiration = getTrainerPeriodExpirationStatus(selectedMembership);
                                                             if (trainerExpiration.isExpiringSoon) {
@@ -1320,6 +1718,139 @@ export default function MembershipsManagement() {
                                                     {selectedMembership.trainer_addon ? 'Yes' : 'No (Included in plan)'}
                                                 </span>
                                             </div>
+                                            {/* Pending Renewal Payment Badge - Using Explicit Eligibility Checks */}
+                                            {(() => {
+                                                // Use explicit eligibility checks based on status and dates
+                                                const now = new Date();
+                                                const renewalBadgeType = getRenewalBadgeType(
+                                                    selectedMembership.status,
+                                                    selectedMembership.membership_end_date || selectedMembership.end_date,
+                                                    selectedMembership.grace_period_end || null,
+                                                    selectedMembership.trainer_assigned || false,
+                                                    selectedMembership.trainer_period_end || null,
+                                                    selectedMembership.trainer_grace_period_end || null,
+                                                    now
+                                                );
+
+                                                // Find pending payment that matches the renewal type
+                                                const pendingPayment = allPayments?.find((p: any) => {
+                                                    if (p.status !== 'pending') return false;
+
+                                                    // Match payment type with eligibility badge type
+                                                    if (renewalBadgeType === 'membership_renewal') {
+                                                        return p.paymentType === 'membership_renewal' || p.paymentType === 'renewal';
+                                                    } else if (renewalBadgeType === 'trainer_renewal') {
+                                                        return p.paymentType === 'trainer_renewal';
+                                                    }
+
+                                                    return false;
+                                                });
+
+                                                // Only show badge if:
+                                                // 1. There's an eligible renewal type (membership or trainer)
+                                                // 2. There's a pending payment matching that type
+                                                if (!renewalBadgeType || !pendingPayment) {
+                                                    return null;
+                                                }
+
+                                                const isTrainerRenewal = renewalBadgeType === 'trainer_renewal';
+                                                const badgeLabel = isTrainerRenewal
+                                                    ? 'Pending Trainer Renewal Payment'
+                                                    : 'Pending Membership Renewal Payment';
+                                                const badgeBackground = isTrainerRenewal ? '#fef3c7' : '#fef3c7';
+                                                const badgeBorder = isTrainerRenewal ? '#fcd34d' : '#fcd34d';
+                                                const badgeTextColor = isTrainerRenewal ? '#92400e' : '#92400e';
+                                                const badgeDetailColor = isTrainerRenewal ? '#78350f' : '#78350f';
+                                                const approveHandler = isTrainerRenewal
+                                                    ? handleApproveTrainerRenewal
+                                                    : handleApprove;
+                                                const rejectHandler = isTrainerRenewal
+                                                    ? handleRejectTrainerRenewal
+                                                    : handleRejectClick;
+
+                                                return (
+                                                    <div className={styles.detailRow} style={{
+                                                        marginTop: '1rem',
+                                                        padding: '0.75rem',
+                                                        background: badgeBackground,
+                                                        borderRadius: '0.375rem',
+                                                        border: `1px solid ${badgeBorder}`
+                                                    }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                                            <div>
+                                                                <div style={{ fontWeight: '600', color: badgeTextColor, marginBottom: '0.25rem' }}>
+                                                                    {badgeLabel}
+                                                                </div>
+                                                                <div style={{ fontSize: '0.875rem', color: badgeDetailColor }}>
+                                                                    Amount: ₹{pendingPayment.amount?.toLocaleString() || '0'}
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                                <button
+                                                                    onClick={() => approveHandler(selectedMembership.id)}
+                                                                    disabled={processing === selectedMembership.id}
+                                                                    style={{
+                                                                        padding: '0.5rem 1rem',
+                                                                        backgroundColor: '#10b981',
+                                                                        color: 'white',
+                                                                        border: 'none',
+                                                                        borderRadius: '0.375rem',
+                                                                        cursor: processing === selectedMembership.id ? 'not-allowed' : 'pointer',
+                                                                        opacity: processing === selectedMembership.id ? 0.6 : 1,
+                                                                        fontSize: '0.875rem',
+                                                                        fontWeight: '600',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '0.5rem'
+                                                                    }}
+                                                                >
+                                                                    {processing === selectedMembership.id ? (
+                                                                        <>
+                                                                            <div className={styles.spinnerSmall}></div>
+                                                                            Processing...
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <CheckCircle size={16} />
+                                                                            Approve Renewal
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => rejectHandler(selectedMembership.id)}
+                                                                    disabled={processing === selectedMembership.id}
+                                                                    style={{
+                                                                        padding: '0.5rem 1rem',
+                                                                        backgroundColor: '#ef4444',
+                                                                        color: 'white',
+                                                                        border: 'none',
+                                                                        borderRadius: '0.375rem',
+                                                                        cursor: processing === selectedMembership.id ? 'not-allowed' : 'pointer',
+                                                                        opacity: processing === selectedMembership.id ? 0.6 : 1,
+                                                                        fontSize: '0.875rem',
+                                                                        fontWeight: '600',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '0.5rem'
+                                                                    }}
+                                                                >
+                                                                    {processing === selectedMembership.id ? (
+                                                                        <>
+                                                                            <div className={styles.spinnerSmall}></div>
+                                                                            Processing...
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <XCircle size={16} />
+                                                                            Reject Renewal
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
                                         </>
                                     ) : (
                                         <>

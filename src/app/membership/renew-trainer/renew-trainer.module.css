@@ -1,0 +1,343 @@
+.container {
+    min-height: calc(100vh - 8rem);
+    padding: 2rem 1rem;
+    background: #000;
+    color: white;
+    max-width: 60rem;
+    margin: 0 auto;
+}
+
+.loading,
+.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    gap: 1rem;
+    color: white;
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.header {
+    margin-bottom: 2rem;
+}
+
+.header h1 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #f97316, #dc2626);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.header p {
+    color: #d1d5db;
+    font-size: 1rem;
+}
+
+.statusCard {
+    margin: 0 auto 2rem;
+    background: linear-gradient(135deg, #1f2937, #111827);
+    border: 1px solid #374151;
+    border-radius: 1rem;
+    padding: 2rem;
+    color: white;
+}
+
+.statusCard h3 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: #fff;
+    border-bottom: 2px solid #f97316;
+    padding-bottom: 0.5rem;
+}
+
+.statusInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.statusItem {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.statusItem:last-child {
+    border-bottom: none;
+}
+
+.statusLabel {
+    color: #d1d5db;
+    font-size: 0.95rem;
+}
+
+.statusValue {
+    color: white;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.form {
+    margin: 0 auto 2rem;
+    background: linear-gradient(135deg, #1f2937, #111827);
+    border: 1px solid #374151;
+    border-radius: 1rem;
+    padding: 2rem;
+    color: white;
+}
+
+.formSection {
+    margin-bottom: 2rem;
+}
+
+.label {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: #fff;
+    border-bottom: 2px solid #f97316;
+    padding-bottom: 0.5rem;
+}
+
+.trainerGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.trainerCard {
+    position: relative;
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px solid #374151;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.trainerCard:hover {
+    border-color: #f97316;
+    background: rgba(249, 115, 22, 0.05);
+}
+
+.trainerCard.selected {
+    border-color: #f97316;
+    background: rgba(249, 115, 22, 0.1);
+}
+
+.trainerPhoto {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.trainerPhotoPlaceholder {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px solid #374151;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #d1d5db;
+}
+
+.trainerInfo {
+    text-align: center;
+}
+
+.trainerName {
+    font-weight: 600;
+    color: white;
+    margin-bottom: 0.25rem;
+}
+
+.trainerPrice {
+    font-size: 0.95rem;
+    color: #10b981;
+    font-weight: 600;
+}
+
+.checkIcon {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    color: #f97316;
+}
+
+.select {
+    width: 100%;
+    padding: 0.75rem;
+    background: #0f0f10;
+    border: 1px solid #212127;
+    border: 1px solid #212127;
+    border-radius: 8px;
+    color: white;
+    font-size: 1rem;
+}
+
+.select:focus {
+    outline: none;
+    border-color: #3b82f6;
+}
+
+.durationInfo {
+    padding: 0.75rem;
+    border: 1px solid #374151;
+    border-radius: 0.5rem;
+    background: rgba(0, 0, 0, 0.3);
+    color: white;
+    font-size: 1rem;
+}
+
+.durationValue {
+    display: block;
+    font-weight: 700;
+    color: #f97316;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+}
+
+.helpText {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: #d1d5db;
+}
+
+.priceSummary {
+    background: linear-gradient(135deg, #1f2937, #111827);
+    border: 1px solid #374151;
+    border-radius: 1rem;
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.priceRow {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    color: #d1d5db;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.priceRow:last-of-type {
+    border-bottom: none;
+}
+
+.priceTotal {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 1rem;
+    margin-top: 0.5rem;
+    border-top: 2px solid #374151;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #10b981;
+}
+
+.formActions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+.cancelButton,
+.submitButton {
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cancelButton {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #d1d5db;
+}
+
+.cancelButton:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.submitButton {
+    background: linear-gradient(135deg, #f97316, #dc2626);
+    border: none;
+    color: white;
+}
+
+.submitButton:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(249, 115, 22, 0.3);
+}
+
+.submitButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.backButton {
+    display: inline-block;
+    margin-top: 1rem;
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, #f97316, #dc2626);
+    color: white;
+    text-decoration: none;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.backButton:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(249, 115, 22, 0.3);
+}
+
+@media (max-width: 768px) {
+    .trainerGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .formActions {
+        flex-direction: column;
+    }
+
+    .submitButton,
+    .cancelButton {
+        width: 100%;
+        justify-content: center;
+    }
+}
+

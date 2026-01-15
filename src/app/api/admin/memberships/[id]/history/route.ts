@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { validateAdminSession } from '@/lib/adminAuth';
+import { detectPaymentType } from '@/lib/paymentTypeDetection';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -38,6 +39,21 @@ export async function GET(
             .eq('id', membershipId)
             .single();
 
+        // Fetch user gender from profiles for renewal price calculation
+        let userGender: string | null = null;
+        if (membership?.user_id) {
+            try {
+                const { data: profile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('gender')
+                    .eq('id', membership.user_id)
+                    .single();
+                userGender = profile?.gender || null;
+            } catch (error) {
+                console.error('Error fetching user gender:', error);
+            }
+        }
+
         if (membershipError || !membership) {
             return NextResponse.json({ error: 'Membership not found' }, { status: 404 });
         }
@@ -63,14 +79,15 @@ export async function GET(
             .eq('membership_id', membershipId)
             .order('created_at', { ascending: false });
 
-        // Get trainer assignment history
+        // Get trainer assignment history (include trainer price for accurate payment type detection)
         const { data: trainerAssignments, error: assignmentsError } = await supabaseAdmin
             .from('trainer_assignments')
             .select(`
                 *,
                 trainers (
                     id,
-                    name
+                    name,
+                    price
                 )
             `)
             .eq('membership_id', membershipId)
@@ -100,94 +117,51 @@ export async function GET(
                 .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
             sortedPayments.forEach((payment, index) => {
-                const isFirst = index === 0;
-                let paymentType = 'initial';
-                let paymentTitle = 'Initial Payment';
-                let paymentColor = '#3b82f6';
-
-                if (!isFirst) {
-                    const paymentDate = new Date(payment.created_at);
-                    
-                    // SIMPLER APPROACH: Check if addon/assignment was created AFTER this payment (within 2 minutes)
-                    // Trainer renewals create addon/assignment immediately after payment
-                    // This ensures each payment only matches its own addon/assignment, not old ones
-                    const matchingAddon = addons?.find(a => {
-                        if (a.addon_type !== 'personal_trainer' || a.status !== 'pending') {
-                            return false;
-                        }
-                        const addonDate = new Date(a.created_at);
-                        // Addon must be created AFTER this payment (trainer renewals create addon after payment)
-                        const isAfterPayment = addonDate > paymentDate;
-                        // Addon must be created very close to payment (within 2 minutes = 120000 ms)
-                        const timeDiff = addonDate.getTime() - paymentDate.getTime();
-                        const isCloseToPayment = timeDiff > 0 && timeDiff < 120000; // 2 minutes after payment
-                        return isAfterPayment && isCloseToPayment;
-                    });
-
-                    // Also check trainer assignments - must be created AFTER this payment
-                    const matchingAssignment = trainerAssignments?.find(assignment => {
-                        const assignmentDate = new Date(assignment.created_at);
-                        // Assignment must be created AFTER this payment
-                        const isAfterPayment = assignmentDate > paymentDate;
-                        // Assignment must be created very close to payment (within 2 minutes)
-                        const timeDiff = assignmentDate.getTime() - paymentDate.getTime();
-                        const isCloseToPayment = timeDiff > 0 && timeDiff < 120000; // 2 minutes after payment
-                        // Trainer renewals create assignments with type 'addon' and status 'pending'
-                        return isAfterPayment && isCloseToPayment && 
-                               assignment.assignment_type === 'addon' && 
-                               assignment.status === 'pending';
-                    });
-
-                    if (matchingAddon || matchingAssignment) {
-                        paymentType = 'trainer_renewal';
-                        paymentTitle = 'Trainer Access Renewal Payment';
-                        paymentColor = '#10b981';
-                        console.log('[HISTORY ROUTE] Trainer renewal detected for payment:', {
-                            paymentId: payment.id,
-                            membershipId: membership.id,
-                            paymentDate: paymentDate.toISOString(),
-                            hasMatchingAddon: !!matchingAddon,
-                            hasMatchingAssignment: !!matchingAssignment,
-                            addonDetails: matchingAddon ? {
-                                id: matchingAddon.id,
-                                created_at: matchingAddon.created_at,
-                                status: matchingAddon.status,
-                                isAfterPayment: new Date(matchingAddon.created_at) > paymentDate,
-                                timeDiffSeconds: (new Date(matchingAddon.created_at).getTime() - paymentDate.getTime()) / 1000
-                            } : null,
-                            assignmentDetails: matchingAssignment ? {
-                                id: matchingAssignment.id,
-                                created_at: matchingAssignment.created_at,
-                                isAfterPayment: new Date(matchingAssignment.created_at) > paymentDate,
-                                status: matchingAssignment.status,
-                                assignment_type: matchingAssignment.assignment_type,
-                                timeDiffSeconds: (new Date(matchingAssignment.created_at).getTime() - paymentDate.getTime()) / 1000
-                            } : null
-                        });
-                    } else {
-                        paymentType = 'membership_renewal';
-                        paymentTitle = 'Membership Renewal Payment';
-                        paymentColor = '#f59e0b';
-                        console.log('[HISTORY ROUTE] Membership renewal detected for payment:', {
-                            paymentId: payment.id,
-                            membershipId: membership.id,
-                            paymentDate: paymentDate.toISOString(),
-                            allAssignments: trainerAssignments?.map(a => {
-                                const assignmentDate = new Date(a.created_at);
-                                const timeDiff = assignmentDate.getTime() - paymentDate.getTime();
-                                return {
-                                    id: a.id,
-                                    created_at: a.created_at,
-                                    isAfterPayment: assignmentDate > paymentDate,
-                                    status: a.status,
-                                    assignment_type: a.assignment_type,
-                                    timeDiffSeconds: timeDiff / 1000,
-                                    within2Minutes: timeDiff > 0 && timeDiff < 120000
-                                };
-                            }) || []
-                        });
+                // Use production-ready payment type detection utility
+                // Note: sortedPayments is in ascending order (oldest first), so index 0 is first payment
+                const paymentTypeResult = detectPaymentType(
+                    sortedPayments.length - 1 - index, // Reverse index for utility (last = first payment)
+                    sortedPayments.length,
+                    {
+                        paymentAmount: parseFloat(payment.amount) || 0,
+                        paymentStatus: payment.status,
+                        paymentCreatedAt: payment.created_at,
+                        membershipStatus: membership.status,
+                        membershipPrice: parseFloat(membership.price) || 0,
+                        membershipEndDate: membership.membership_end_date || membership.end_date || null,
+                        gracePeriodEnd: membership.grace_period_end || null,
+                        membershipPlanName: membership.plan_name || '',
+                        membershipPlanType: membership.plan_type || '',
+                        userGender: userGender,
+                        trainerAddons: addons?.filter(a => a.addon_type === 'personal_trainer').map(a => ({
+                            id: a.id,
+                            created_at: a.created_at,
+                            status: a.status,
+                            addon_type: a.addon_type,
+                            price: parseFloat(a.price) || 0
+                        })) || [],
+                        trainerAssignments: trainerAssignments?.map(ta => ({
+                            id: ta.id,
+                            created_at: ta.created_at,
+                            status: ta.status,
+                            assignment_type: ta.assignment_type,
+                            trainer_id: ta.trainer_id,
+                            trainer_price: ta.trainers?.price ? parseFloat(ta.trainers.price) : undefined
+                        })) || [],
+                        allPayments: sortedPayments.map(p => ({
+                            id: p.id,
+                            created_at: p.created_at,
+                            amount: parseFloat(p.amount) || 0,
+                            status: p.status
+                        }))
                     }
-                }
+                );
+
+                const paymentType = paymentTypeResult.type;
+                const paymentTitle = paymentType === 'initial'
+                    ? 'Initial Payment'
+                    : paymentTypeResult.label + ' Payment';
+                const paymentColor = paymentTypeResult.color;
 
                 timeline.push({
                     type: 'payment',
@@ -244,13 +218,13 @@ export async function GET(
                 } else if (assignment.status === 'expired') {
                     statusColor = '#dc2626'; // Red for expired
                 }
-                
+
                 // Use membership.trainer_assigned as source of truth if assignment status is pending but membership says assigned
-                const isActuallyAssigned = membership.trainer_assigned && 
-                    membership.trainer_id === assignment.trainer_id && 
+                const isActuallyAssigned = membership.trainer_assigned &&
+                    membership.trainer_id === assignment.trainer_id &&
                     assignment.status === 'pending';
                 const displayStatus = isActuallyAssigned ? 'assigned' : assignment.status;
-                
+
                 timeline.push({
                     type: 'trainer_assignment',
                     date: assignment.created_at,

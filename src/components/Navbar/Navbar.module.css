@@ -8,6 +8,7 @@
     background: #000;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     transition: background 0.3s ease;
+    backdrop-filter: blur(10px);
 }
 
 .navbar::after {
@@ -31,6 +32,20 @@
     height: 4.5rem;
 }
 
+@media (max-width: 768px) {
+    .container {
+        padding: 0 1rem;
+        height: 4rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .container {
+        padding: 0 0.75rem;
+        height: 3.75rem;
+    }
+}
+
 /* Logo */
 .logo {
     display: flex;
@@ -49,6 +64,18 @@
     font-size: 1.4rem;
     font-weight: 700;
     letter-spacing: 1px;
+}
+
+@media (max-width: 768px) {
+    .logoText {
+        font-size: 1.25rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .logoText {
+        font-size: 1.125rem;
+    }
 }
 
 /* Desktop Menu */
@@ -108,6 +135,9 @@
     transition: all 0.3s ease;
     text-decoration: none;
     display: inline-block;
+    min-height: 44px;
+    min-width: 44px;
+    font-size: 0.9375rem;
 }
 
 .joinButton:hover:not(:disabled) {
@@ -119,6 +149,13 @@
     opacity: 0.8;
     cursor: not-allowed;
     transform: none;
+}
+
+@media (max-width: 768px) {
+    .joinButton {
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+    }
 }
 
 .logoutLoading {
@@ -161,10 +198,20 @@
     cursor: pointer;
     padding: 0.5rem;
     transition: transform 0.2s ease;
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
 }
 
 .mobileMenuButton:hover {
     transform: rotate(10deg);
+}
+
+.mobileMenuButton:active {
+    transform: scale(0.95);
 }
 
 @media (min-width: 1024px) {
@@ -204,12 +251,26 @@
     cursor: pointer;
     text-align: left;
     width: 100%;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    touch-action: manipulation;
 }
-
 
 .mobileMenuItem:hover {
     background: rgba(249, 115, 22, 0.1);
     color: #f97316;
+}
+
+.mobileMenuItem:active {
+    background: rgba(249, 115, 22, 0.2);
+}
+
+@media (max-width: 480px) {
+    .mobileMenuItem {
+        font-size: 1rem;
+        padding: 0.75rem 0.875rem;
+    }
 }
 
 /* Mobile Button */
@@ -230,6 +291,11 @@
     font-size: 1rem;
     cursor: pointer;
     transition: all 0.3s ease;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
 }
 
 .mobileJoinButton:hover:not(:disabled) {
@@ -237,10 +303,21 @@
     background: linear-gradient(90deg, #ea580c, #f97316);
 }
 
+.mobileJoinButton:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
 .mobileJoinButton:disabled {
     opacity: 0.8;
     cursor: not-allowed;
     transform: none;
+}
+
+@media (max-width: 480px) {
+    .mobileJoinButton {
+        padding: 0.75rem;
+        font-size: 0.9375rem;
+    }
 }
 
 /* Logout Loading Overlay */

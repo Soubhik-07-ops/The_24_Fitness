@@ -5,6 +5,21 @@
     color: white;
     max-width: 60rem;
     margin: 0 auto;
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 1.5rem 0.75rem;
+        min-height: calc(100vh - 6rem);
+    }
+}
+
+@media (max-width: 480px) {
+    .container {
+        padding: 1.25rem 0.5rem;
+        min-height: calc(100vh - 5.5rem);
+    }
 }
 
 .header {
@@ -74,6 +89,22 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    line-height: 1.2;
+    word-wrap: break-word;
+}
+
+@media (max-width: 768px) {
+    .title {
+        font-size: 2rem;
+        margin-bottom: 0.875rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .title {
+        font-size: 1.75rem;
+        margin-bottom: 0.75rem;
+    }
 }
 
 .planInfo {
@@ -112,6 +143,22 @@
     border: 1px solid #374151;
     border-radius: 1rem;
     padding: 2rem;
+    width: 100%;
+    overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+    .form {
+        padding: 1.5rem;
+        border-radius: 0.875rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .form {
+        padding: 1.25rem;
+        border-radius: 0.75rem;
+    }
 }
 
 .section {
@@ -135,6 +182,19 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .formGrid {
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .formGrid {
+        gap: 1rem;
+    }
 }
 
 .formGroup {
@@ -165,6 +225,9 @@
     color: white;
     font-size: 1rem;
     transition: all 0.2s;
+    width: 100%;
+    min-height: 44px;
+    font-family: inherit;
 }
 
 .formGroup input:focus,
@@ -178,6 +241,19 @@
 .formGroup textarea {
     resize: vertical;
     min-height: 100px;
+}
+
+@media (max-width: 480px) {
+    .formGroup input,
+    .formGroup select,
+    .formGroup textarea {
+        padding: 0.625rem;
+        font-size: 0.9375rem;
+    }
+    
+    .formGroup textarea {
+        min-height: 80px;
+    }
 }
 
 .formGroupFull label {
@@ -224,7 +300,20 @@
     transition: all 0.2s;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.5rem;
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+}
+
+@media (max-width: 480px) {
+    .cancelButton,
+    .submitButton {
+        padding: 0.75rem 1.5rem;
+        font-size: 0.9375rem;
+        width: 100%;
+    }
 }
 
 .cancelButton {
@@ -304,6 +393,22 @@
     background: rgba(0, 0, 0, 0.2);
     border-radius: 0.5rem;
     border: 1px solid #374151;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+    .sectionNav {
+        padding: 0.875rem;
+        gap: 0.375rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .sectionNav {
+        padding: 0.75rem;
+        gap: 0.375rem;
+    }
 }
 
 .sectionNavBtn {
@@ -316,6 +421,11 @@
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    touch-action: manipulation;
 }
 
 .sectionNavBtn:hover {
@@ -323,10 +433,30 @@
     border-color: rgba(255, 255, 255, 0.2);
 }
 
+.sectionNavBtn:active {
+    transform: scale(0.98);
+}
+
 .sectionNavBtn.active {
     background: linear-gradient(135deg, #f97316, #dc2626);
     border-color: transparent;
     color: white;
+}
+
+@media (max-width: 768px) {
+    .sectionNavBtn {
+        padding: 0.5rem 0.875rem;
+        font-size: 0.8125rem;
+        min-height: 40px;
+    }
+}
+
+@media (max-width: 480px) {
+    .sectionNavBtn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.75rem;
+        min-height: 38px;
+    }
 }
 
 /* Radio Groups */
@@ -476,10 +606,12 @@
 @media (max-width: 768px) {
     .formGrid {
         grid-template-columns: 1fr;
+        gap: 1.25rem;
     }
 
     .formActions {
         flex-direction: column;
+        gap: 0.75rem;
     }
 
     .cancelButton,
@@ -489,16 +621,17 @@
     }
 
     .sectionNav {
-        flex-direction: column;
+        flex-wrap: wrap;
     }
 
     .sectionNavBtn {
-        width: 100%;
-        text-align: center;
+        flex: 1 1 auto;
+        min-width: 120px;
     }
 
     .checkboxGrid {
         grid-template-columns: 1fr;
+        gap: 0.875rem;
     }
 
     .radioGroup {
@@ -510,5 +643,50 @@
         right: 1rem;
         left: 1rem;
         max-width: none;
+    }
+    
+    .planInfo {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+    
+    .header {
+        margin-bottom: 1.5rem;
+    }
+    
+    .sectionTitle {
+        font-size: 1.25rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .formActions {
+        gap: 0.5rem;
+    }
+    
+    .planInfo {
+        width: 100%;
+    }
+    
+    .planBadge,
+    .planType,
+    .planPrice {
+        width: 100%;
+        text-align: center;
+    }
+    
+    .sectionTitle {
+        font-size: 1.125rem;
+    }
+    
+    .backButton {
+        font-size: 0.875rem;
+        padding: 0.5rem 0.875rem;
+    }
+    
+    .checkboxGrid {
+        padding: 0.75rem;
+        gap: 0.75rem;
     }
 }

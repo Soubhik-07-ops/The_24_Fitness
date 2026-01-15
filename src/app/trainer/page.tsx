@@ -54,7 +54,7 @@ export default function TrainerDashboard() {
             setStats({
                 totalClients: clients.length,
                 totalCharts: allCharts.length,
-                unreadMessages: 0, // TODO: Implement message count if needed
+                unreadMessages: 0, // Message count can be implemented if needed in the future
             });
         } catch (error) {
             console.error('Error fetching dashboard stats:', error);

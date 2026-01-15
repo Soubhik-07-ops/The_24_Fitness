@@ -6,6 +6,7 @@ import styles from './TrainerChatWindow.module.css';
 import { Send } from 'lucide-react';
 import Toast from '@/components/Toast/Toast';
 import { useToast } from '@/hooks/useToast';
+import { checkTrainerMessagingAccess } from '@/lib/trainerMessagingAccess';
 
 interface ChatMessage {
     id: string;
@@ -38,35 +39,39 @@ export default function TrainerChatWindow({ trainerId, trainerName }: TrainerCha
 
         try {
             // Check if user has active membership with this trainer assigned
-            const { data: memberships } = await supabase
+            // Use the centralized access control utility to ensure consistent behavior
+            const { data: membershipData } = await supabase
                 .from('memberships')
-                .select('id, trainer_assigned, trainer_id, trainer_period_end, status')
+                .select('id, trainer_assigned, trainer_id, trainer_period_end, trainer_grace_period_end, membership_end_date, end_date, plan_name, status')
                 .eq('user_id', userId)
                 .eq('trainer_id', trainerId)
                 .eq('trainer_assigned', true)
                 .eq('status', 'active')
-                .gt('trainer_period_end', new Date().toISOString())
-                .limit(1);
+                .limit(1)
+                .maybeSingle();
 
-            const hasActiveAccess = memberships && memberships.length > 0;
+            if (!membershipData) {
+                setHasTrainerAccess(false);
+                setRestrictionMessage('You can only message trainers when you have an active membership with trainer access assigned.');
+                return false;
+            }
+
+            // Use the centralized access control utility
+            // This ensures messaging is disabled after trainer expiry, even during grace period
+            const accessStatus = checkTrainerMessagingAccess(
+                membershipData.trainer_period_end,
+                membershipData.trainer_grace_period_end,
+                undefined, // Use real current date for frontend checks
+                membershipData.membership_end_date || membershipData.end_date || null,
+                membershipData.plan_name
+            );
+
+            const hasActiveAccess = accessStatus.canMessage;
             setHasTrainerAccess(hasActiveAccess);
 
             if (!hasActiveAccess) {
-                // Check if trainer period expired
-                const { data: expiredMemberships } = await supabase
-                    .from('memberships')
-                    .select('trainer_period_end')
-                    .eq('user_id', userId)
-                    .eq('trainer_id', trainerId)
-                    .eq('trainer_assigned', true)
-                    .eq('status', 'active')
-                    .limit(1);
-
-                if (expiredMemberships && expiredMemberships.length > 0) {
-                    setRestrictionMessage('Your trainer access period has expired. Please renew your trainer access to continue messaging.');
-                } else {
-                    setRestrictionMessage('You can only message trainers when you have an active membership with trainer access assigned.');
-                }
+                // Set restriction message from access status
+                setRestrictionMessage(accessStatus.reason);
             } else {
                 setRestrictionMessage(null);
             }
@@ -74,6 +79,8 @@ export default function TrainerChatWindow({ trainerId, trainerName }: TrainerCha
             return hasActiveAccess;
         } catch (error) {
             console.error('Error checking trainer access:', error);
+            setHasTrainerAccess(false);
+            setRestrictionMessage('Error checking trainer access. Please try again.');
             return false;
         }
     };

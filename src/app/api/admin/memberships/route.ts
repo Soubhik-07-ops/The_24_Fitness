@@ -164,12 +164,29 @@ export async function GET(request: NextRequest) {
             const hasInGymAddon = activeAddons.some(addon => addon.addon_type === 'in_gym');
             const planName = String(membership.plan_name || '').toLowerCase();
             const isRegularPlan = planName.includes('regular');
+            const isRegularMonthly = planName.includes('regular') && (planName.includes('monthly') || planName.includes('boys') || planName.includes('girls'));
             const inGymAdmissionFee = (membership.plan_type === 'in_gym' && !hasInGymAddon && !isRegularPlan) ? inGymAdmissionFeeDefault : 0;
 
             const totalAmount = basePrice + addonTotal + inGymAdmissionFee;
 
             // Get trainer name from map
-            const trainerName = membership.trainer_id ? trainersMap.get(membership.trainer_id) || null : null;
+            let trainerName = membership.trainer_id ? trainersMap.get(membership.trainer_id) || null : null;
+            
+            // CRITICAL: For Regular Monthly plans, hide trainer info if membership has expired
+            // Trainer access is tightly bound to membership lifecycle - no carryover to grace period
+            if (isRegularMonthly && membership.trainer_assigned) {
+                const endDate = membership.membership_end_date || membership.end_date;
+                // Use real current date for admin API (admin panel shows real state, not demo mode)
+                const now = new Date();
+                
+                // If membership has expired (even if in grace period), hide trainer completely
+                if (endDate && new Date(endDate) <= now) {
+                    // Membership expired - trainer access should be hidden from admin view
+                    trainerName = null;
+                    // Note: We don't modify membership.trainer_id here as it's used for data integrity
+                    // The frontend will filter based on trainer_name being null
+                }
+            }
 
             // Check for pending payments
             const pendingPayment = payments
@@ -198,6 +215,9 @@ export async function GET(request: NextRequest) {
 
             // Old renewal detection logic removed - renewals now handled via contact page
 
+            // For Regular Monthly plans with expired membership, hide trainer info
+            const shouldHideTrainer = isRegularMonthly && trainerName === null && membership.trainer_assigned;
+            
             return {
                 ...membership,
                 user_email: authUser?.email || 'No email',
@@ -207,7 +227,12 @@ export async function GET(request: NextRequest) {
                 payment_amount: payment?.amount || null, // Full payment amount including addons
                 payment_screenshot_url: payment?.payment_screenshot_url || null,
                 form_data: membership.form_data || null, // Include form data
-                trainer_name: trainerName, // Add trainer name
+                trainer_name: trainerName, // Add trainer name (null for expired Regular Monthly plans)
+                // For expired Regular Monthly plans, set trainer_assigned to false for UI consistency
+                trainer_assigned: shouldHideTrainer ? false : membership.trainer_assigned,
+                trainer_id: shouldHideTrainer ? null : membership.trainer_id,
+                trainer_period_end: shouldHideTrainer ? null : membership.trainer_period_end,
+                trainer_grace_period_end: shouldHideTrainer ? null : membership.trainer_grace_period_end,
                 all_payments: allPayments, // Include all payments for this membership
                 has_renewals: hasRenewals, // Flag to indicate if membership has been renewed
                 addons: membershipAddons.map(addon => {

@@ -443,80 +443,73 @@ function MembershipFormContent() {
     }
 
     // Validation function for each section
-    // TEMPORARILY DISABLED FOR TESTING - All fields are optional
     const validateSection = (sectionIndex: number): { isValid: boolean; errors: string[] } => {
         const errors: string[] = []
 
-        // All validation disabled for testing purposes
-        // switch (sectionIndex) {
-        //     case 0: // Personal Information
-        //         if (!formData.name?.trim()) errors.push('Name is required')
-        //         if (!formData.date) errors.push('Date is required')
-        //         if (!formData.dateOfBirth) errors.push('Date of Birth is required')
-        //         if (!formData.email?.trim()) errors.push('Email is required')
-        //         if (!formData.phone?.trim()) errors.push('Phone Number is required')
-        //         if (!formData.age) errors.push('Age is required')
-        //         if (!formData.gender) errors.push('Gender is required')
-        //         if (!formData.address?.trim()) errors.push('Address is required')
-        //         if (!formData.city?.trim()) errors.push('City is required')
-        //         if (!formData.state?.trim()) errors.push('State is required')
-        //         if (!formData.pincode?.trim()) errors.push('Pincode is required')
-        //         if (!formData.emergencyContact?.trim()) errors.push('Emergency Contact Name is required')
-        //         if (!formData.emergencyPhone?.trim()) errors.push('Emergency Contact Phone is required')
-        //         break
+        // Section 0: Personal Information - Required fields
+        if (sectionIndex === 0) {
+            if (!formData.name || formData.name.trim() === '') {
+                errors.push(t('name') + ' is required')
+            }
+            if (!formData.dateOfBirth || formData.dateOfBirth.trim() === '') {
+                errors.push(t('dateOfBirth') + ' is required')
+            }
+            if (!formData.email || formData.email.trim() === '') {
+                errors.push(t('email') + ' is required')
+            } else {
+                // Basic email validation
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+                if (!emailRegex.test(formData.email)) {
+                    errors.push('Please enter a valid email address')
+                }
+            }
+            if (!formData.phone || formData.phone.trim() === '') {
+                errors.push(t('phoneNumber') + ' is required')
+            } else {
+                // Validate phone number (should be 10 digits)
+                const phoneDigits = formData.phone.replace(/\D/g, '')
+                if (phoneDigits.length !== 10) {
+                    errors.push('Phone number must be exactly 10 digits')
+                }
+            }
+            if (!formData.gender || formData.gender === '') {
+                errors.push(t('gender') + ' is required')
+            }
+            if (!formData.address || formData.address.trim() === '') {
+                errors.push(t('address') + ' is required')
+            }
+            if (!formData.city || formData.city.trim() === '') {
+                errors.push(t('city') + ' is required')
+            }
+            if (!formData.state || formData.state.trim() === '') {
+                errors.push(t('state') + ' is required')
+            }
+            if (!formData.pincode || formData.pincode.trim() === '') {
+                errors.push(t('pincode') + ' is required')
+            } else {
+                // Validate pincode (should be 6 digits)
+                const pincodeDigits = formData.pincode.replace(/\D/g, '')
+                if (pincodeDigits.length !== 6) {
+                    errors.push('Pincode must be exactly 6 digits')
+                }
+            }
+        }
 
-        //     case 1: // Medical Information
-        //         if (!formData.presentHealthState) errors.push('Present State of Health is required')
-        //         if (!formData.medicationAdherence) errors.push('Medication Adherence is required')
-        //         if (!formData.supplements) errors.push('Supplements question is required')
-        //         if (!formData.cholesterolChecked) errors.push('Cholesterol Checked question is required')
-        //         if (!formData.bloodSugarChecked) errors.push('Blood Sugar Checked question is required')
-        //         break
+        // Section 1: Medical Information - Required fields
+        if (sectionIndex === 1) {
+            if (!formData.presentHealthState || formData.presentHealthState.trim() === '') {
+                errors.push(t('presentHealthState') + ' is required')
+            }
+            if (!formData.medicationAdherence || formData.medicationAdherence.trim() === '') {
+                errors.push(t('medicationAdherence') + ' is required')
+            }
+        }
 
-        //     case 2: // Family History - No required fields, all optional
-        //         break
-
-        //     case 3: // Nutrition
-        //         if (!formData.dietaryGoals?.trim()) errors.push('Dietary goals is required')
-        //         if (!formData.modifiedDiet) errors.push('Modified diet question is required')
-        //         if (!formData.specializedEatingPlan) errors.push('Specialized eating plan question is required')
-        //         if (!formData.dietitianConsultation) errors.push('Dietitian consultation question is required')
-        //         if (!formData.foodAllergies) errors.push('Food allergies question is required')
-        //         if (!formData.foodCravings) errors.push('Food cravings question is required')
-        //         break
-
-        //     case 4: // Substance-related Habits
-        //         if (!formData.alcohol) errors.push('Alcohol question is required')
-        //         if (!formData.caffeinatedBeverages) errors.push('Caffeinated beverages question is required')
-        //         if (!formData.tobacco) errors.push('Tobacco question is required')
-        //         break
-
-        //     case 5: // Physical Activity
-        //         if (!formData.structuredActivity) errors.push('Structured activity question is required')
-        //         if (!formData.otherPhysicalActivity) errors.push('Other physical activity question is required')
-        //         if (!formData.activityInjuries) errors.push('Activity injuries question is required')
-        //         break
-
-        //     case 6: // Occupational
-        //         if (!formData.work) errors.push('Work question is required')
-        //         break
-
-        //     case 7: // Sleep and Stress
-        //         if (!formData.stressAppetite) errors.push('Stress appetite question is required')
-        //         break
-
-        //     case 8: // Weight History
-        //         if (!formData.weightGoal) errors.push('Weight goal is required')
-        //         break
-
-        //     case 9: // Goals
-        //         if (!formData.specificHealthGoals) errors.push('Specific health goals question is required')
-        //         if (!formData.weightLossGoal) errors.push('Weight loss goal question is required')
-        //         break
-        // }
+        // Other sections can be optional or have specific validations as needed
+        // For now, only Personal Information and Medical Information have required fields
 
         return {
-            isValid: true, // Always return valid for testing
+            isValid: errors.length === 0,
             errors
         }
     }
@@ -527,7 +520,10 @@ function MembershipFormContent() {
 
         const validation = validateSection(currentSection)
         if (!validation.isValid) {
-            showToast(t('pleaseFillAllFields'), 'error')
+            const errorMessage = validation.errors.length > 0
+                ? validation.errors[0]
+                : t('pleaseFillAllFields')
+            showToast(errorMessage, 'error')
             return
         }
 
@@ -549,7 +545,10 @@ function MembershipFormContent() {
         // If going forward, validate current section first
         const validation = validateSection(currentSection)
         if (!validation.isValid) {
-            showToast(t('pleaseFillAllFields'), 'error')
+            const errorMessage = validation.errors.length > 0
+                ? validation.errors[0]
+                : t('pleaseFillAllFields')
+            showToast(errorMessage, 'error')
             return
         }
 
@@ -562,13 +561,20 @@ function MembershipFormContent() {
         setLoading(true)
 
         try {
-            // TEMPORARILY DISABLED FOR TESTING - All fields are optional
-            // Validate required fields
-            // if (!formData.name || !formData.email || !formData.phone || !formData.dateOfBirth || !formData.gender) {
-            //     showToast('Please fill in all required personal information fields', 'error')
-            //     setLoading(false)
-            //     return
-            // }
+            // Validate all sections before submission
+            for (let i = 0; i < sections.length; i++) {
+                const validation = validateSection(i)
+                if (!validation.isValid) {
+                    const errorMessage = validation.errors.length > 0
+                        ? validation.errors[0]
+                        : `Please fill in all required fields in ${sections[i]} section`
+                    showToast(errorMessage, 'error')
+                    setLoading(false)
+                    // Navigate to the section with errors
+                    setCurrentSection(i)
+                    return
+                }
+            }
 
             // Generate PDF
             const pdfDoc = generateMembershipFormPDF(
@@ -599,9 +605,9 @@ function MembershipFormContent() {
             // New plan can only start after current plan's end date
             const { data: existingActiveMemberships, error: activeMembershipsError } = await supabase
                 .from('memberships')
-                .select('id, plan_name, status, membership_end_date, end_date')
+                .select('id, plan_name, status, membership_end_date, end_date, grace_period_end')
                 .eq('user_id', user.id)
-                .in('status', ['active', 'pending', 'awaiting_payment'])
+                .in('status', ['active', 'pending', 'awaiting_payment', 'grace_period'])
                 .order('membership_end_date', { ascending: false })
                 .order('end_date', { ascending: false });
 
@@ -609,11 +615,26 @@ function MembershipFormContent() {
                 throw activeMembershipsError;
             }
 
-            // Check if there's an active membership that hasn't ended yet
+            // Check if there's an active membership or grace period membership
             if (existingActiveMemberships && existingActiveMemberships.length > 0) {
                 const now = new Date();
                 now.setHours(0, 0, 0, 0);
 
+                // First, check for grace_period status - block new purchases during grace period
+                const gracePeriodMembership = existingActiveMemberships.find((m: any) => m.status === 'grace_period');
+                if (gracePeriodMembership) {
+                    const gracePeriodEnd = gracePeriodMembership.grace_period_end;
+                    const daysRemaining = gracePeriodEnd
+                        ? Math.ceil((new Date(gracePeriodEnd).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+                        : 0;
+
+                    throw new Error(
+                        `You cannot purchase a new plan while your membership is in grace period. ` +
+                        `Please renew your existing membership instead of purchasing a new plan.`
+                    );
+                }
+
+                // Check for active/pending memberships that haven't ended yet
                 const activeMembership = existingActiveMemberships.find((m: any) => {
                     const endDate = m.membership_end_date || m.end_date;
                     if (!endDate) {
@@ -627,11 +648,11 @@ function MembershipFormContent() {
 
                 if (activeMembership) {
                     const endDate = activeMembership.membership_end_date || activeMembership.end_date;
-                    const endDateFormatted = endDate 
-                        ? new Date(endDate).toLocaleDateString('en-IN', { 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric' 
+                    const endDateFormatted = endDate
+                        ? new Date(endDate).toLocaleDateString('en-IN', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
                         })
                         : 'N/A';
 
@@ -732,13 +753,14 @@ function MembershipFormContent() {
                             <h2 className={styles.sectionTitle}>{t('personalInformation')}</h2>
                             <div className={styles.formGrid}>
                                 <div className={styles.formGroup}>
-                                    <label htmlFor="name">{t('name')}</label>
+                                    <label htmlFor="name">{t('name')} <span style={{ color: '#ff6b35' }}>*</span></label>
                                     <input
                                         type="text"
                                         id="name"
                                         name="name"
                                         value={formData.name}
                                         onChange={handleChange}
+                                        required
                                     />
                                 </div>
                                 <div className={styles.formGroup}>
@@ -752,7 +774,7 @@ function MembershipFormContent() {
                                     />
                                 </div>
                                 <div className={styles.formGroup}>
-                                    <label htmlFor="dateOfBirth">{t('dateOfBirth')}</label>
+                                    <label htmlFor="dateOfBirth">{t('dateOfBirth')} <span style={{ color: '#ff6b35' }}>*</span></label>
                                     <input
                                         type="date"
                                         id="dateOfBirth"
@@ -760,26 +782,31 @@ function MembershipFormContent() {
                                         value={formData.dateOfBirth}
                                         onChange={handleChange}
                                         max={new Date().toISOString().split('T')[0]}
+                                        required
                                     />
                                 </div>
                                 <div className={styles.formGroup}>
-                                    <label htmlFor="email">{t('email')}</label>
+                                    <label htmlFor="email">{t('email')} <span style={{ color: '#ff6b35' }}>*</span></label>
                                     <input
                                         type="email"
                                         id="email"
                                         name="email"
                                         value={formData.email}
                                         onChange={handleChange}
+                                        required
                                     />
                                 </div>
                                 <div className={styles.formGroup}>
-                                    <label htmlFor="phone">{t('phoneNumber')}</label>
+                                    <label htmlFor="phone">{t('phoneNumber')} <span style={{ color: '#ff6b35' }}>*</span></label>
                                     <input
                                         type="tel"
                                         id="phone"
                                         name="phone"
                                         value={formData.phone}
                                         onChange={handleChange}
+                                        required
+                                        pattern="[0-9]{10}"
+                                        maxLength={10}
                                     />
                                 </div>
                                 <div className={styles.formGroup}>
@@ -795,12 +822,13 @@ function MembershipFormContent() {
                                     />
                                 </div>
                                 <div className={styles.formGroup}>
-                                    <label htmlFor="gender">{t('gender')}</label>
+                                    <label htmlFor="gender">{t('gender')} <span style={{ color: '#ff6b35' }}>*</span></label>
                                     <select
                                         id="gender"
                                         name="gender"
                                         value={formData.gender}
                                         onChange={handleChange}
+                                        required
                                     >
                                         <option value="">{t('selectGender')}</option>
                                         <option value="male">{t('male')}</option>
@@ -810,37 +838,40 @@ function MembershipFormContent() {
                                     </select>
                                 </div>
                                 <div className={styles.formGroupFull}>
-                                    <label htmlFor="address">{t('address')}</label>
+                                    <label htmlFor="address">{t('address')} <span style={{ color: '#ff6b35' }}>*</span></label>
                                     <textarea
                                         id="address"
                                         name="address"
                                         value={formData.address}
                                         onChange={handleChange}
                                         rows={3}
+                                        required
                                     />
                                 </div>
                                 <div className={styles.formGroup}>
-                                    <label htmlFor="city">{t('city')}</label>
+                                    <label htmlFor="city">{t('city')} <span style={{ color: '#ff6b35' }}>*</span></label>
                                     <input
                                         type="text"
                                         id="city"
                                         name="city"
                                         value={formData.city}
                                         onChange={handleChange}
+                                        required
                                     />
                                 </div>
                                 <div className={styles.formGroup}>
-                                    <label htmlFor="state">{t('state')}</label>
+                                    <label htmlFor="state">{t('state')} <span style={{ color: '#ff6b35' }}>*</span></label>
                                     <input
                                         type="text"
                                         id="state"
                                         name="state"
                                         value={formData.state}
                                         onChange={handleChange}
+                                        required
                                     />
                                 </div>
                                 <div className={styles.formGroup}>
-                                    <label htmlFor="pincode">{t('pincode')}</label>
+                                    <label htmlFor="pincode">{t('pincode')} <span style={{ color: '#ff6b35' }}>*</span></label>
                                     <input
                                         type="text"
                                         id="pincode"
@@ -848,6 +879,8 @@ function MembershipFormContent() {
                                         value={formData.pincode}
                                         onChange={handleChange}
                                         pattern="[0-9]{6}"
+                                        maxLength={6}
+                                        required
                                     />
                                 </div>
                                 <div className={styles.formGroup}>

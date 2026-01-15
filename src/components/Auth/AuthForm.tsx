@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowLeft, Info } from 'lucide-react';
 import { validatePassword, getPasswordRequirements } from '@/lib/passwordValidation';
+import { isRecommendedEmailProvider } from '@/lib/emailValidation';
 import styles from './AuthForm.module.css';
 
 export default function AuthForm() {
@@ -50,7 +51,7 @@ export default function AuthForm() {
                     return;
                 }
 
-                // Check for duplicate email or phone
+                // Check for duplicate email or phone (includes disposable email validation)
                 const duplicateCheck = await fetch('/api/auth/check-duplicate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -58,6 +59,21 @@ export default function AuthForm() {
                 });
 
                 const duplicateData = await duplicateCheck.json();
+
+                // Handle disposable email error (server-side validation)
+                if (duplicateData.isDisposable || (duplicateData.error && duplicateData.isDisposable)) {
+                    setMessage(`Error: ${duplicateData.error || 'Temporary or disposable email addresses are not allowed. Please use a permanent email address.'}`);
+                    setLoading(false);
+                    return;
+                }
+
+                // Handle other validation errors
+                if (!duplicateCheck.ok && duplicateData.error) {
+                    setMessage(`Error: ${duplicateData.error}`);
+                    setLoading(false);
+                    return;
+                }
+
                 if (duplicateData.emailExists) {
                     setMessage('Error: An account with this email already exists');
                     setLoading(false);
@@ -70,13 +86,16 @@ export default function AuthForm() {
                 }
 
                 // Sign Up Logic
+                // Note: Supabase signUp may create a session automatically, so we'll explicitly sign out after account creation
                 const { data, error } = await supabase.auth.signUp({
                     email: email,
                     password: password,
                     options: {
                         data: {
                             full_name: fullName
-                        }
+                        },
+                        // Prevent automatic email confirmation redirect that might create a session
+                        emailRedirectTo: undefined
                     }
                 });
 
@@ -116,10 +135,93 @@ export default function AuthForm() {
                     }
                 }
 
+                // CRITICAL: Explicitly sign out to prevent auto-authentication
+                // This ensures no session is persisted after signup
+                // Users must explicitly log in to access their account
+                try {
+                    // Sign out from Supabase (clears server-side session)
+                    await supabase.auth.signOut();
+                } catch (signOutError) {
+                    console.error('Error signing out after signup:', signOutError);
+                    // Continue even if sign out fails - we'll clear session on client side
+                }
+
+                // Clear any local session storage/cookies that might persist
+                // This ensures the user is treated as unauthenticated
+                if (typeof window !== 'undefined') {
+                    // Clear Supabase session from localStorage (Supabase uses specific keys)
+                    // Supabase stores session in localStorage with keys like:
+                    // - `sb-<project-ref>-auth-token`
+                    // - `supabase.auth.token`
+                    const supabaseKeys: string[] = [];
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && (
+                            key.includes('supabase') ||
+                            key.includes('sb-') ||
+                            key.startsWith('sb-')
+                        )) {
+                            supabaseKeys.push(key);
+                        }
+                    }
+                    supabaseKeys.forEach(key => {
+                        try {
+                            localStorage.removeItem(key);
+                        } catch (e) {
+                            // Ignore errors when clearing storage
+                        }
+                    });
+
+                    // Also clear sessionStorage
+                    for (let i = 0; i < sessionStorage.length; i++) {
+                        const key = sessionStorage.key(i);
+                        if (key && (
+                            key.includes('supabase') ||
+                            key.includes('sb-') ||
+                            key.startsWith('sb-')
+                        )) {
+                            try {
+                                sessionStorage.removeItem(key);
+                            } catch (e) {
+                                // Ignore errors when clearing storage
+                            }
+                        }
+                    }
+                }
+
+                // Verify no session exists after signup
+                // This ensures the user is truly unauthenticated
+                try {
+                    const { data: { session: verifySession } } = await supabase.auth.getSession();
+                    if (verifySession) {
+                        // If session still exists, force sign out again
+                        console.warn('Session still exists after signup, forcing sign out...');
+                        await supabase.auth.signOut();
+                    }
+                } catch (verifyError) {
+                    // Ignore verification errors - session check is best effort
+                }
+
                 setMessage('Account created successfully! Please log in.');
                 setIsSigningUp(false);
-                // Clear form
-                setEmail('');
+
+                // Send welcome email on signup (only once, idempotent check in email service)
+                try {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (user) {
+                        await fetch('/api/auth/send-welcome-email', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ userId: user.id })
+                        });
+                    }
+                } catch (welcomeEmailError) {
+                    // Don't fail signup if welcome email fails
+                    console.error('Failed to send welcome email:', welcomeEmailError);
+                }
+
+                // Clear form (keep email for convenience)
+                // setEmail(''); // Keep email so user can easily log in
                 setPassword('');
                 setConfirmPassword('');
                 setFullName('');
@@ -157,9 +259,19 @@ export default function AuthForm() {
 
                 if (error) throw error;
 
+                // Verify session was created after login
+                const { data: { session: loginSession } } = await supabase.auth.getSession();
+                if (!loginSession) {
+                    throw new Error('Login failed: No session created. Please try again.');
+                }
+
+                // Welcome email is sent only on signup, not on login
+                // Removed login-time welcome email to prevent duplicate sends
+
                 setMessage('Logged in successfully! Redirecting...');
 
                 // Smooth redirect with loading state - use redirect URL if available
+                // Only redirect if we have a valid session
                 setTimeout(() => {
                     router.push(redirectUrl);
                     window.location.href = redirectUrl;
@@ -252,6 +364,12 @@ export default function AuthForm() {
                             required
                             placeholder={isSigningUp ? 'you@example.com' : 'Email or Phone Number'}
                         />
+                        {isSigningUp && email && !isRecommendedEmailProvider(email) && (
+                            <div className={styles.emailHint}>
+                                <Info size={14} />
+                                <span>We recommend using Gmail for better email delivery of verification emails, invoices, and notifications.</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className={styles.inputGroup}>

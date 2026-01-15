@@ -42,7 +42,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 <h2 className={styles.sectionTitle}>{t('medicalInformation')}</h2>
 
                 <div className={styles.formGroupFull}>
-                    <label>1. {t('presentHealthState')} {t('required')}</label>
+                    <label>1. {t('presentHealthState')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         {[
                             { en: 'Very well', hi: 'बहुत अच्छा', value: 'very_well' },
@@ -97,7 +97,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. {t('medicationAdherence')} {t('required')}</label>
+                    <label>3. {t('medicationAdherence')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -147,7 +147,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>4. {t('supplements')} {t('required')}</label>
+                    <label>4. {t('supplements')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -197,7 +197,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>6. {t('cholesterolChecked')} {t('required')}</label>
+                    <label>6. {t('cholesterolChecked')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -277,7 +277,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>7. {t('bloodSugarChecked')} {t('required')}</label>
+                    <label>7. {t('bloodSugarChecked')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -474,7 +474,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. {t('modifiedDiet')} {t('required')}</label>
+                    <label>2. {t('modifiedDiet')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -512,7 +512,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. {t('specializedEatingPlan')} {t('required')}</label>
+                    <label>3. {t('specializedEatingPlan')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -597,7 +597,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>5. {t('dietitianConsultation')} {t('required')}</label>
+                    <label>5. {t('dietitianConsultation')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -688,7 +688,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>9. {t('foodAllergies')} {t('required')}</label>
+                    <label>9. {t('foodAllergies')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -805,7 +805,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>13. {t('foodCravings')} {t('required')}</label>
+                    <label>13. {t('foodCravings')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -852,7 +852,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 <h2 className={styles.sectionTitle}>{t('substanceHabits')}</h2>
 
                 <div className={styles.formGroupFull}>
-                    <label>1. {t('alcohol')} {t('required')}</label>
+                    <label>1. {t('alcohol')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -907,7 +907,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. {t('caffeinatedBeverages')} {t('required')}</label>
+                    <label>2. {t('caffeinatedBeverages')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -946,7 +946,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. {t('tobacco')} {t('required')}</label>
+                    <label>3. {t('tobacco')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -993,7 +993,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 <h2 className={styles.sectionTitle}>{t('physicalActivity')}</h2>
 
                 <div className={styles.formGroupFull}>
-                    <label>1. {t('structuredActivity')} {t('required')}</label>
+                    <label>1. {t('structuredActivity')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1089,7 +1089,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. {t('otherPhysicalActivity')} {t('required')}</label>
+                    <label>2. {t('otherPhysicalActivity')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1127,7 +1127,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. {t('activityInjuries')} {t('required')}</label>
+                    <label>3. {t('activityInjuries')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1208,7 +1208,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 <h2 className={styles.sectionTitle}>{t('occupational')}</h2>
 
                 <div className={styles.formGroupFull}>
-                    <label>1. {t('work')} {t('required')}</label>
+                    <label>1. {t('work')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1316,7 +1316,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>4. {t('stressAppetite')} {t('required')}</label>
+                    <label>4. {t('stressAppetite')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1387,7 +1387,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. {t('weightGoal')} {t('required')}</label>
+                    <label>2. {t('weightGoal')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1566,7 +1566,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>2. {t('specificHealthGoals')} {t('required')}</label>
+                    <label>2. {t('specificHealthGoals')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input
@@ -1604,7 +1604,7 @@ export const renderFormSection = (props: FormSectionsProps) => {
                 </div>
 
                 <div className={styles.formGroupFull}>
-                    <label>3. {t('weightLossGoal')} {t('required')}</label>
+                    <label>3. {t('weightLossGoal')} <span style={{ color: '#ff6b35' }}>*</span></label>
                     <div className={styles.radioGroup}>
                         <label className={styles.radioLabel}>
                             <input

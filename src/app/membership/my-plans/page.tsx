@@ -7,6 +7,7 @@ import Navbar from '@/components/Navbar/Navbar'
 import Footer from '@/components/Footer/Footer'
 import { ArrowLeft, CheckCircle, Clock, XCircle, Calendar, CreditCard } from 'lucide-react'
 import styles from './my-plans.module.css'
+import { getMembershipExpirationStatus as getMembershipExpirationStatusUtil } from '@/lib/membershipUtils'
 
 interface MembershipAddon {
     id: number
@@ -130,28 +131,9 @@ export default function MyMembershipsPage() {
         })
     }
 
-    // Check if membership is expiring soon or expired (same logic as Dashboard)
-    const getMembershipExpirationStatus = (membership: Membership): {
-        isExpiringSoon: boolean;
-        isExpired: boolean;
-        daysRemaining: number | null
-    } => {
-        if (!membership.end_date) {
-            return { isExpiringSoon: false, isExpired: false, daysRemaining: null };
-        }
-
-        const endDate = new Date(membership.end_date);
-        const now = new Date();
-        const diffTime = endDate.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (diffDays < 0) {
-            return { isExpiringSoon: false, isExpired: true, daysRemaining: Math.abs(diffDays) };
-        } else if (diffDays <= 7) {
-            return { isExpiringSoon: true, isExpired: false, daysRemaining: diffDays };
-        }
-
-        return { isExpiringSoon: false, isExpired: false, daysRemaining: diffDays };
+    // Check if membership is expiring soon or expired (using centralized utility)
+    const getMembershipExpirationStatus = (membership: Membership) => {
+        return getMembershipExpirationStatusUtil(membership.end_date);
     }
 
     if (loading) {

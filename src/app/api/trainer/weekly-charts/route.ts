@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { validateTrainerSession } from '@/lib/trainerAuth';
 import { getChartResponsibility, needsWorkoutCharts, needsDietCharts } from '@/lib/chartResponsibility';
+import { getTrainerPeriodExpirationStatus } from '@/lib/membershipUtils';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
         // Get all memberships where this trainer is assigned (from memberships table)
         const { data: memberships, error: membershipsError } = await supabaseAdmin
             .from('memberships')
-            .select('id, user_id, plan_name, status, trainer_assigned, trainer_id, trainer_period_end, membership_start_date, membership_end_date')
+            .select('id, user_id, plan_name, status, trainer_assigned, trainer_id, trainer_period_end, trainer_grace_period_end, membership_start_date, membership_end_date')
             .eq('trainer_id', trainer.id)
             .eq('trainer_assigned', true)
             .eq('status', 'active')
@@ -73,11 +74,9 @@ export async function GET(request: NextRequest) {
             const clientCharts = (charts || []).filter((c: any) => c.membership_id === membership.id);
 
             // Calculate days until trainer period expires
-            const now = new Date();
-            const periodEnd = new Date(membership.trainer_period_end);
-            const diffTime = periodEnd.getTime() - now.getTime();
-            const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            const isExpiringSoon = daysRemaining <= 4 && daysRemaining > 0;
+            const expirationStatus = getTrainerPeriodExpirationStatus(membership.trainer_period_end);
+            const daysRemaining = expirationStatus.daysRemaining;
+            const isExpiringSoon = expirationStatus.isExpiringSoon;
 
             return {
                 membership_id: membership.id,
@@ -138,6 +137,7 @@ export async function POST(request: NextRequest) {
                 trainer_assigned, 
                 trainer_id, 
                 trainer_period_end,
+                trainer_grace_period_end,
                 plan_name,
                 membership_start_date,
                 start_date,
@@ -161,12 +161,17 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Check if trainer period is still active
+        // Check if trainer period is still active (including grace period)
             const now = new Date();
         const trainerPeriodEnd = membership.trainer_period_end ? new Date(membership.trainer_period_end) : null;
-        if (trainerPeriodEnd && trainerPeriodEnd < now) {
+        const trainerGracePeriodEnd = membership.trainer_grace_period_end ? new Date(membership.trainer_grace_period_end) : null;
+
+        const isPeriodActive = trainerPeriodEnd && trainerPeriodEnd > now;
+        const isInGracePeriod = trainerGracePeriodEnd && now <= trainerGracePeriodEnd;
+
+        if (!isPeriodActive && !isInGracePeriod) {
             return NextResponse.json(
-                    { error: 'Your trainer access period for this membership has expired' },
+                { error: 'Your trainer access period for this membership has expired. Please renew to continue uploading charts.' },
                     { status: 403 }
             );
             }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { validateEmail } from '@/lib/emailValidation';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -15,6 +16,23 @@ export async function POST(request: NextRequest) {
                 { error: 'Email or phone is required' },
                 { status: 400 }
             );
+        }
+
+        // Validate email format and check for disposable emails (server-side validation)
+        if (email) {
+            const emailValidation = validateEmail(email);
+            if (!emailValidation.isValid) {
+                return NextResponse.json(
+                    {
+                        error: emailValidation.error || 'Invalid email address',
+                        isDisposable: emailValidation.isDisposable || false,
+                        emailExists: false,
+                        phoneExists: false,
+                        exists: false
+                    },
+                    { status: 400 }
+                );
+            }
         }
 
         const phoneDigits = phone ? phone.replace(/\D/g, '') : null;

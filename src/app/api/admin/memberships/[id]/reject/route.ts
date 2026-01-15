@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { validateAdminSession } from '@/lib/adminAuth';
+import { logAuditEvent } from '@/lib/auditLog';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -45,6 +46,20 @@ export async function POST(
             return NextResponse.json({ error: 'Membership not found' }, { status: 404 });
         }
 
+        // Get admin's auth user ID for audit trail
+        let adminAuthUserId: string | null = null;
+        try {
+            const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
+            const authUser = users?.find(u => u.email === admin.email);
+            if (authUser?.id) {
+                adminAuthUserId = authUser.id;
+            }
+        } catch (authError) {
+            console.log('Admin does not have auth.users entry for audit trail');
+        }
+
+        const previousStatus = membership.status;
+
         // Update membership status to rejected
         const { error: updateError } = await supabaseAdmin
             .from('memberships')
@@ -52,8 +67,34 @@ export async function POST(
             .eq('id', membershipId);
 
         if (updateError) {
+            console.error('[REJECT] Critical error updating membership:', {
+                error: updateError,
+                membershipId
+            });
+            await logAuditEvent({
+                membership_id: membershipId,
+                action: 'rejected',
+                admin_id: adminAuthUserId,
+                admin_email: admin.email,
+                previous_status: previousStatus,
+                new_status: 'rejected',
+                details: `Failed to reject membership: ${updateError.message}`,
+                metadata: { error: updateError.message, reason }
+            });
             throw updateError;
         }
+
+        // Log successful rejection to audit trail
+        await logAuditEvent({
+            membership_id: membershipId,
+            action: 'rejected',
+            admin_id: adminAuthUserId,
+            admin_email: admin.email,
+            previous_status: previousStatus,
+            new_status: 'rejected',
+            details: `Membership rejected. Reason: ${reason}`,
+            metadata: { reason, plan_name: membership.plan_name }
+        });
 
         // Create notification for user
         const { data: notificationData, error: notificationError } = await supabaseAdmin

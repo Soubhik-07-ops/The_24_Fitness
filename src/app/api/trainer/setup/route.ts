@@ -12,8 +12,17 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
     auth: { autoRefreshToken: false, persistSession: false }
 });
 
-// Default password should come from environment variable, not hardcoded
-const DEFAULT_PASSWORD = process.env.TRAINER_DEFAULT_PASSWORD || 'trainer123';
+// Default password MUST come from environment variable
+// No hardcoded fallback - prevents password exposure in source code
+function getDefaultPassword(): string {
+    const envPassword = process.env.TRAINER_DEFAULT_PASSWORD;
+
+    if (!envPassword) {
+        throw new Error('TRAINER_DEFAULT_PASSWORD environment variable is required. Please set it in your .env.local file.');
+    }
+
+    return envPassword;
+}
 
 // Helper function to check admin authentication
 async function requireAdmin(request: NextRequest): Promise<{ admin: any } | { error: string; status: number }> {
@@ -100,9 +109,12 @@ export async function GET(request: NextRequest) {
 
         if (error) throw error;
 
+        // Get default password (will throw error in production if not set)
+        const defaultPassword = getDefaultPassword();
+
         const results = [];
         for (const trainer of trainers || []) {
-            const passwordHash = await hashPassword(DEFAULT_PASSWORD);
+            const passwordHash = await hashPassword(defaultPassword);
             const { error: updateError } = await supabaseAdmin
                 .from('trainers')
                 .update({ password_hash: passwordHash })

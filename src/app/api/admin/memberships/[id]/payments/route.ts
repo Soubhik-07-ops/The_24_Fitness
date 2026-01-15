@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { validateAdminSession } from '@/lib/adminAuth';
+import { detectPaymentType } from '@/lib/paymentTypeDetection';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -31,12 +32,27 @@ export async function GET(
             return NextResponse.json({ error: 'Invalid membership ID' }, { status: 400 });
         }
 
-        // Get membership details to determine payment types
+        // Get membership details to determine payment types (need price, plan_name, plan_type, user_id, grace_period_end, end_date)
         const { data: membership } = await supabaseAdmin
             .from('memberships')
-            .select('created_at, status, trainer_assigned, trainer_id')
+            .select('created_at, status, trainer_assigned, trainer_id, price, plan_name, plan_type, user_id, grace_period_end, membership_end_date, end_date')
             .eq('id', membershipId)
             .single();
+
+        // Fetch user gender from profiles for renewal price calculation
+        let userGender: string | null = null;
+        if (membership?.user_id) {
+            try {
+                const { data: profile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('gender')
+                    .eq('id', membership.user_id)
+                    .single();
+                userGender = profile?.gender || null;
+            } catch (error) {
+                console.error('Error fetching user gender:', error);
+            }
+        }
 
         // Get all payment records for this membership
         const { data: payments, error: paymentsError } = await supabaseAdmin
@@ -54,17 +70,29 @@ export async function GET(
         }
 
         // Get trainer addons to check for trainer renewals (both pending and active)
+        // Include price to determine if payment includes base plan or just trainer
         const { data: trainerAddons } = await supabaseAdmin
             .from('membership_addons')
-            .select('id, created_at, status, addon_type')
+            .select('id, created_at, status, addon_type, price')
             .eq('membership_id', membershipId)
             .eq('addon_type', 'personal_trainer')
             .order('created_at', { ascending: false });
 
         // Get trainer assignments to check for trainer renewals
+        // CRITICAL: Include trainer price for accurate payment type detection
         const { data: trainerAssignments } = await supabaseAdmin
             .from('trainer_assignments')
-            .select('id, created_at, assignment_type, status')
+            .select(`
+                id,
+                created_at,
+                assignment_type,
+                status,
+                trainers (
+                    id,
+                    name,
+                    price
+                )
+            `)
             .eq('membership_id', membershipId)
             .order('created_at', { ascending: false });
 
@@ -72,7 +100,7 @@ export async function GET(
         const sortedPayments = [...payments].sort((a, b) =>
             new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
-        
+
         // Get verified payments to determine last verified payment date
         const verifiedPayments = payments.filter(p => p.status === 'verified')
             .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -80,109 +108,94 @@ export async function GET(
         // Generate signed URLs for all payment screenshots and determine payment type
         const paymentsWithScreenshots = await Promise.all(
             payments.map(async (payment, index) => {
-                // Determine payment type
-                let paymentType = 'initial';
-                let paymentTypeLabel = 'Initial Purchase';
-                let paymentTypeColor = '#3b82f6'; // Blue for initial
+                // Use production-ready payment type detection utility
+                // CRITICAL: For pending payments, use current membership status
+                // For verified payments, membership status might have changed, but payment type should remain correct
+                const paymentTypeResult = detectPaymentType(index, payments.length, {
+                    paymentAmount: parseFloat(payment.amount) || 0,
+                    paymentStatus: payment.status,
+                    paymentCreatedAt: payment.created_at,
+                    membershipStatus: membership?.status || 'unknown',
+                    membershipPrice: parseFloat(membership?.price) || 0,
+                    membershipEndDate: membership?.membership_end_date || membership?.end_date || null,
+                    gracePeriodEnd: membership?.grace_period_end || null, // Include grace period end for accurate renewal detection
+                    membershipPlanName: membership?.plan_name || '',
+                    membershipPlanType: membership?.plan_type || '',
+                    userGender: userGender,
+                    trainerAddons: trainerAddons || [],
+                    trainerAssignments: trainerAssignments?.map(ta => ({
+                        id: ta.id,
+                        created_at: ta.created_at,
+                        status: ta.status,
+                        assignment_type: ta.assignment_type,
+                        trainer_id: (ta.trainers as any)?.id,
+                        trainer_price: (ta.trainers as any)?.price ? parseFloat(String((ta.trainers as any).price)) : undefined
+                    })) || [],
+                    allPayments: payments.map(p => ({
+                        id: p.id,
+                        created_at: p.created_at,
+                        amount: parseFloat(p.amount) || 0,
+                        status: p.status
+                    }))
+                });
 
-                const paymentDate = new Date(payment.created_at);
-                const isFirstPayment = index === payments.length - 1; // Last in descending order = first chronologically
+                // Use payment_purpose (explicit intent) as primary source, fallback to detected type
+                let paymentType: string;
+                let paymentTypeLabel: string;
+                let paymentTypeColor: string;
 
-                // Check if this is a renewal payment (not the first payment)
-                if (!isFirstPayment) {
-                    // SIMPLER APPROACH: Check if addon/assignment was created AFTER this payment (within 2 minutes)
-                    // Trainer renewals create addon/assignment immediately after payment
-                    // This ensures each payment only matches its own addon/assignment, not old ones
-                    const matchingTrainerAddon = trainerAddons?.find(addon => {
-                        if (addon.addon_type !== 'personal_trainer' || addon.status !== 'pending') {
-                            return false;
-                        }
-                        const addonDate = new Date(addon.created_at);
-                        // Addon must be created AFTER this payment (trainer renewals create addon after payment)
-                        const isAfterPayment = addonDate > paymentDate;
-                        // Addon must be created very close to payment (within 2 minutes = 120000 ms)
-                        // This ensures we only match addons created for THIS specific payment
-                        const timeDiff = addonDate.getTime() - paymentDate.getTime();
-                        const isCloseToPayment = timeDiff > 0 && timeDiff < 120000; // 2 minutes after payment
-                        return isAfterPayment && isCloseToPayment;
-                    });
-
-                    // Also check trainer assignments - must be created AFTER this payment
-                    const matchingAssignment = trainerAssignments?.find(assignment => {
-                        const assignmentDate = new Date(assignment.created_at);
-                        // Assignment must be created AFTER this payment
-                        const isAfterPayment = assignmentDate > paymentDate;
-                        // Assignment must be created very close to payment (within 2 minutes)
-                        const timeDiff = assignmentDate.getTime() - paymentDate.getTime();
-                        const isCloseToPayment = timeDiff > 0 && timeDiff < 120000; // 2 minutes after payment
-                        // Trainer renewals create assignments with type 'addon' and status 'pending'
-                        return isAfterPayment && isCloseToPayment && 
-                               assignment.assignment_type === 'addon' && 
-                               assignment.status === 'pending';
-                    });
-
-                    // If either addon or assignment matches, it's a trainer renewal
-                    if (matchingTrainerAddon || matchingAssignment) {
-                        paymentType = 'trainer_renewal';
-                        paymentTypeLabel = 'Trainer Access Renewal';
-                        paymentTypeColor = '#10b981'; // Green for trainer renewal
-                        console.log('[PAYMENTS ROUTE] Trainer renewal detected for payment:', {
-                            paymentId: payment.id,
-                            membershipId: membershipId,
-                            paymentDate: paymentDate.toISOString(),
-                            hasMatchingAddon: !!matchingTrainerAddon,
-                            hasMatchingAssignment: !!matchingAssignment,
-                            addonDetails: matchingTrainerAddon ? {
-                                id: matchingTrainerAddon.id,
-                                created_at: matchingTrainerAddon.created_at,
-                                status: matchingTrainerAddon.status,
-                                isAfterPayment: new Date(matchingTrainerAddon.created_at) > paymentDate,
-                                timeDiffSeconds: (new Date(matchingTrainerAddon.created_at).getTime() - paymentDate.getTime()) / 1000
-                            } : null,
-                            assignmentDetails: matchingAssignment ? {
-                                id: matchingAssignment.id,
-                                created_at: matchingAssignment.created_at,
-                                isAfterPayment: new Date(matchingAssignment.created_at) > paymentDate,
-                                status: matchingAssignment.status,
-                                assignment_type: matchingAssignment.assignment_type,
-                                timeDiffSeconds: (new Date(matchingAssignment.created_at).getTime() - paymentDate.getTime()) / 1000
-                            } : null
-                        });
-                    } else {
-                        // If no trainer addon/assignment matches, it's a membership renewal
-                        // Membership renewals don't create trainer addons
+                if (payment.payment_purpose) {
+                    // Use explicit payment_purpose from payment record (source of truth)
+                    if (payment.payment_purpose === 'initial_purchase') {
+                        paymentType = 'initial';
+                        paymentTypeLabel = 'Initial Purchase';
+                        paymentTypeColor = '#3b82f6';
+                    } else if (payment.payment_purpose === 'membership_renewal') {
                         paymentType = 'membership_renewal';
                         paymentTypeLabel = 'Membership Plan Renewal';
-                        paymentTypeColor = '#f59e0b'; // Orange for membership renewal
-                        console.log('[PAYMENTS ROUTE] Membership renewal detected for payment:', {
-                            paymentId: payment.id,
-                            membershipId: membershipId,
-                            paymentDate: paymentDate.toISOString(),
-                            allAssignments: trainerAssignments?.map(a => {
-                                const assignmentDate = new Date(a.created_at);
-                                const timeDiff = assignmentDate.getTime() - paymentDate.getTime();
-                                return {
-                                    id: a.id,
-                                    created_at: a.created_at,
-                                    isAfterPayment: assignmentDate > paymentDate,
-                                    status: a.status,
-                                    assignment_type: a.assignment_type,
-                                    timeDiffSeconds: timeDiff / 1000,
-                                    within2Minutes: timeDiff > 0 && timeDiff < 120000
-                                };
-                            }) || []
-                        });
+                        paymentTypeColor = '#f59e0b';
+                    } else if (payment.payment_purpose === 'trainer_renewal') {
+                        paymentType = 'trainer_renewal';
+                        paymentTypeLabel = 'Trainer Access Renewal';
+                        paymentTypeColor = '#10b981';
+                    } else {
+                        // Fallback to detected type if payment_purpose is invalid
+                        paymentType = paymentTypeResult.type;
+                        paymentTypeLabel = paymentTypeResult.label;
+                        paymentTypeColor = paymentTypeResult.color;
                     }
+                } else {
+                    // Backward compatibility: use detected type if payment_purpose not set
+                    paymentType = paymentTypeResult.type;
+                    paymentTypeLabel = paymentTypeResult.label;
+                    paymentTypeColor = paymentTypeResult.color;
                 }
 
+                // Debug logging for payment type detection
+                if (payment.status === 'pending') {
+                    console.log('[PAYMENT TYPE DETECTION]', {
+                        paymentId: payment.id,
+                        amount: payment.amount,
+                        membershipStatus: membership?.status,
+                        detectedType: paymentType,
+                        confidence: paymentTypeResult.confidence,
+                        hasTrainerAddon: (trainerAddons || []).some(a => a.addon_type === 'personal_trainer'),
+                        trainerAddons: trainerAddons || [],
+                        trainerAssignments: trainerAssignments || []
+                    });
+                }
+
+                // Return payment with type information
+                const paymentWithType = {
+                    ...payment,
+                    screenshotUrl: null,
+                    paymentType,
+                    paymentTypeLabel,
+                    paymentTypeColor
+                };
+
                 if (!payment.payment_screenshot_url) {
-                    return {
-                        ...payment,
-                        screenshotUrl: null,
-                        paymentType,
-                        paymentTypeLabel,
-                        paymentTypeColor
-                    };
+                    return paymentWithType;
                 }
 
                 // Extract file path from URL if needed

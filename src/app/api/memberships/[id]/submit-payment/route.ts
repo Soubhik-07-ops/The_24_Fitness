@@ -53,7 +53,7 @@ export async function POST(
         // Verify membership exists and belongs to user
         const { data: membership, error: membershipError } = await supabaseAdmin
             .from('memberships')
-            .select('id, user_id, status, plan_name, plan_type, duration_months')
+            .select('id, user_id, status, plan_name, plan_type, duration_months, end_date, membership_end_date')
             .eq('id', membershipId)
             .single()
 
@@ -71,7 +71,53 @@ export async function POST(
             )
         }
 
-        // Create payment record
+        // Get current date
+        const now = new Date();
+        
+        // Check if membership has expired
+        const endDate = membership.membership_end_date || membership.end_date;
+        const hasExpired = endDate ? new Date(endDate) <= now : false;
+        
+        // Validate membership status - allow payment submission for:
+        // 1. 'awaiting_payment' (new purchase)
+        // 2. 'grace_period' (renewal)
+        // 3. 'active' BUT expired (cron job might not have transitioned to grace_period yet)
+        const isEligibleForRenewal = membership.status === 'grace_period' || 
+            (membership.status === 'active' && hasExpired);
+        
+        if (membership.status !== 'awaiting_payment' && !isEligibleForRenewal) {
+            return NextResponse.json(
+                { error: `Cannot submit payment. Membership is in '${membership.status}' status. Payment can only be submitted when membership status is 'awaiting_payment' (new purchase) or 'grace_period' (renewal), or if membership has expired (for renewals).` },
+                { status: 400 }
+            )
+        }
+
+        // Check for existing pending payment to prevent duplicates
+        const { data: existingPendingPayment } = await supabaseAdmin
+            .from('membership_payments')
+            .select('id, created_at')
+            .eq('membership_id', membershipId)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+
+        if (existingPendingPayment) {
+            return NextResponse.json(
+                { error: 'A payment is already pending for this membership. Please wait for admin approval before submitting another payment.' },
+                { status: 400 }
+            )
+        }
+
+        // Determine if this is a renewal payment
+        // This must be calculated BEFORE determining payment_purpose
+        const isRenewal = membership.status === 'grace_period' || (membership.status === 'active' && hasExpired);
+
+        // Determine payment purpose based on membership status
+        // This is the explicit intent set at payment creation time
+        const paymentPurpose = isRenewal ? 'membership_renewal' : 'initial_purchase';
+
+        // Create payment record with explicit payment_purpose
         const { data: payment, error: paymentError } = await supabaseAdmin
             .from('membership_payments')
             .insert({
@@ -81,7 +127,8 @@ export async function POST(
                 amount: amount,
                 payment_screenshot_url: screenshotPath,
                 payment_method: 'qr_code',
-                status: 'pending'
+                status: 'pending',
+                payment_purpose: paymentPurpose // Explicit intent: initial_purchase or membership_renewal
             })
             .select()
             .single()
@@ -97,27 +144,51 @@ export async function POST(
         // Determine plan mode (Online or InGym)
         const planMode = membership.plan_type === 'in_gym' || addons?.inGym ? 'InGym' : 'Online'
 
-        // Update membership status from 'awaiting_payment' to 'pending' (using service role bypasses RLS)
+        // Update membership status based on current status
+        // For 'awaiting_payment' (new purchase): update to 'pending'
+        // For 'grace_period' (renewal): update to 'pending' (will be reactivated on approval)
+        // For 'active' but expired (demo mode): treat as renewal, update to 'pending'
+        // Note: isRenewal is already calculated above
+        const updateData: any = {
+            status: 'pending',
+            plan_mode: planMode,
+            updated_at: new Date().toISOString()
+        };
+
+        // For grace period renewals or expired active memberships, we keep the membership record but mark it as pending
+        // The approval route will handle reactivation and date extension
+
+        // Use conditional update to prevent race conditions
+        // Allow 'active' status if expired (for demo mode)
+        const statusCondition = isRenewal 
+            ? (membership.status === 'grace_period' ? 'grace_period' : 'active')
+            : 'awaiting_payment';
         const { data: updatedMembership, error: updateError } = await supabaseAdmin
             .from('memberships')
-            .update({
-                status: 'pending',
-                plan_mode: planMode,
-                updated_at: new Date().toISOString()
-            })
+            .update(updateData)
             .eq('id', membershipId)
+            .eq('status', statusCondition) // Only update if still in expected status (prevents race conditions)
             .select()
             .single()
 
-        if (updateError) {
+        if (updateError || !updatedMembership) {
             console.error('Error updating membership status:', updateError)
-            // Don't fail the whole request - payment was created
-            // But log the error for debugging
+            // If status update fails, we have a payment but membership is in wrong state
+            // Try to clean up the payment to prevent orphan records
+            await supabaseAdmin
+                .from('membership_payments')
+                .delete()
+                .eq('id', payment.id)
+            return NextResponse.json(
+                { error: 'Failed to update membership status. Payment was not processed. Please try again.' },
+                { status: 500 }
+            )
         } else {
             console.log('Membership status updated successfully:', {
                 id: membershipId,
                 oldStatus: membership.status,
-                newStatus: 'pending'
+                newStatus: 'pending',
+                isRenewal
             })
         }
 
@@ -162,6 +233,13 @@ export async function POST(
         // Handle trainer assignment logic
         let trainerAssignmentCreated = false
         if (addons?.personalTrainer && addons?.selectedTrainer) {
+            console.log('[SUBMIT PAYMENT] Processing trainer addon for renewal:', {
+                membershipId,
+                isRenewal,
+                trainerId: addons.selectedTrainer,
+                membershipStatus: membership.status
+            })
+
             // Fetch trainer from database using the trainer ID (not hardcoded names)
             // The frontend now sends the actual trainer UUID from database
             const { data: trainerData, error: trainerError } = await supabaseAdmin
@@ -172,7 +250,7 @@ export async function POST(
                 .single()
 
             if (trainerError || !trainerData) {
-                console.error('Error fetching trainer:', trainerError)
+                console.error('[SUBMIT PAYMENT] Error fetching trainer:', trainerError)
                 return NextResponse.json(
                     { error: 'Invalid or inactive trainer selected' },
                     { status: 400 }
@@ -182,8 +260,15 @@ export async function POST(
             // Use price from database, not hardcoded
             const trainerPrice = parseFloat(trainerData.price) || 0
             if (trainerPrice === 0) {
-                console.warn(`Trainer ${trainerData.name} (ID: ${trainerData.id}) has no price in database`)
+                console.warn(`[SUBMIT PAYMENT] Trainer ${trainerData.name} (ID: ${trainerData.id}) has no price in database`)
             }
+
+            console.log('[SUBMIT PAYMENT] Trainer details:', {
+                trainerId: trainerData.id,
+                trainerName: trainerData.name,
+                trainerPrice,
+                isRenewal
+            })
 
             // Create trainer addon record
             const { data: trainerAddon, error: trainerAddonError } = await supabaseAdmin
@@ -199,9 +284,16 @@ export async function POST(
                 .single()
 
             if (trainerAddonError) {
-                console.error('Error creating personal trainer addon:', trainerAddonError)
+                console.error('[SUBMIT PAYMENT] Error creating personal trainer addon:', trainerAddonError)
             } else {
-                console.log('Personal trainer addon created successfully:', trainerAddon)
+                console.log('[SUBMIT PAYMENT] Personal trainer addon created successfully:', {
+                    addonId: trainerAddon.id,
+                    membershipId,
+                    trainerId: trainerData.id,
+                    price: trainerPrice,
+                    status: trainerAddon.status,
+                    isRenewal
+                })
 
                 // Create trainer assignment request
                 // Note: We'll use a future date for membership start (when admin approves)
@@ -226,11 +318,23 @@ export async function POST(
 
                 if (assignmentResult.success) {
                     trainerAssignmentCreated = true
-                    console.log('Trainer assignment request created:', assignmentResult.assignmentId)
+                    console.log('[SUBMIT PAYMENT] Trainer assignment request created:', {
+                        assignmentId: assignmentResult.assignmentId,
+                        membershipId,
+                        trainerId: trainerData.id,
+                        isRenewal
+                    })
                 } else {
-                    console.error('Error creating trainer assignment request:', assignmentResult.error)
+                    console.error('[SUBMIT PAYMENT] Error creating trainer assignment request:', assignmentResult.error)
                 }
             }
+        } else {
+            console.log('[SUBMIT PAYMENT] No trainer addon selected:', {
+                membershipId,
+                hasPersonalTrainer: addons?.personalTrainer,
+                hasSelectedTrainer: Boolean(addons?.selectedTrainer),
+                isRenewal
+            })
         }
 
         // For Premium and Elite plans, check if they include trainer (even without addon)

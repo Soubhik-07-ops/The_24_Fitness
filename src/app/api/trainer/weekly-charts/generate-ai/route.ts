@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
                 trainer_assigned,
                 trainer_id,
                 trainer_period_end,
+                trainer_grace_period_end,
                 plan_name,
                 plan_type,
                 plan_mode,
@@ -86,12 +87,17 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Check if trainer period is still active
+        // Check if trainer period is still active (including grace period)
         const now = new Date();
         const trainerPeriodEnd = membership.trainer_period_end ? new Date(membership.trainer_period_end) : null;
-        if (trainerPeriodEnd && trainerPeriodEnd < now) {
+        const trainerGracePeriodEnd = membership.trainer_grace_period_end ? new Date(membership.trainer_grace_period_end) : null;
+        
+        const isPeriodActive = trainerPeriodEnd && trainerPeriodEnd > now;
+        const isInGracePeriod = trainerGracePeriodEnd && now <= trainerGracePeriodEnd;
+        
+        if (!isPeriodActive && !isInGracePeriod) {
             return NextResponse.json(
-                { error: 'Your trainer access period for this membership has expired' },
+                { error: 'Your trainer access period for this membership has expired. Please renew to continue generating charts.' },
                 { status: 403 }
             );
         }

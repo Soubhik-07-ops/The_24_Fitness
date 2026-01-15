@@ -13,7 +13,15 @@ export async function POST(request: NextRequest) {
 
         // IMPORTANT: Use a secure setup key (store in .env.local)
         // This prevents unauthorized admin creation
-        const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || 'CHANGE_THIS_IN_PRODUCTION';
+        const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY;
+        
+        if (!ADMIN_SETUP_KEY) {
+            console.error('ADMIN_SETUP_KEY environment variable is not set');
+            return NextResponse.json(
+                { error: 'Server configuration error. ADMIN_SETUP_KEY is required.' },
+                { status: 500 }
+            );
+        }
 
         if (setupKey !== ADMIN_SETUP_KEY) {
             return NextResponse.json(

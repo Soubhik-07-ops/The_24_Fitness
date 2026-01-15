@@ -1,7 +1,7 @@
 // src/app/admin/layout.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -19,7 +19,9 @@ import {
     MessageSquareDashedIcon,
     CreditCard,
     FileText,
-    Tag
+    Tag,
+    Mail,
+    AlertCircle
 } from 'lucide-react';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import RealtimeNotifications from '@/components/Notifications/RealtimeNotifications';
@@ -50,6 +52,7 @@ const navigation = [
 
     // Reports & Analytics
     { name: 'Weekly Charts', href: '/admin/weekly-charts', icon: FileText },
+    { name: 'Email Failures', href: '/admin/email-failures', icon: AlertCircle },
 
     // Configuration
     { name: 'Settings', href: '/admin/settings', icon: Settings }
@@ -64,6 +67,31 @@ export default function AdminLayout({
     const pathname = usePathname();
     const { admin, loading, signOut } = useAdminAuth();
     const router = useRouter();
+
+    // Fix for zoom background issue - ensure body/html background matches admin panel
+    useEffect(() => {
+        // Add class to body/html for admin route styling
+        document.body.classList.add('adminRoute');
+        document.documentElement.classList.add('adminRoute');
+        
+        // Force body/html background to match admin panel (prevents black background when zooming)
+        const originalBodyBg = document.body.style.background;
+        const originalHtmlBg = document.documentElement.style.background;
+        const originalBodyColor = document.body.style.color;
+        
+        document.body.style.background = '#f8fafc';
+        document.documentElement.style.background = '#f8fafc';
+        document.body.style.color = '#111827';
+        
+        return () => {
+            // Cleanup on unmount
+            document.body.classList.remove('adminRoute');
+            document.documentElement.classList.remove('adminRoute');
+            document.body.style.background = originalBodyBg;
+            document.documentElement.style.background = originalHtmlBg;
+            document.body.style.color = originalBodyColor;
+        };
+    }, []);
 
     // If on login page, don't show the admin layout
     if (pathname === '/admin/login') {

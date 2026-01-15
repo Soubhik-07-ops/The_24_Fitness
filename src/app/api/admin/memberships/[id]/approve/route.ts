@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { validateAdminSession } from '@/lib/adminAuth';
 import { calculateTrainerPeriod, assignTrainerToMembership, createTrainerAssignmentRequest, type TrainerAssignmentConfig } from '@/lib/trainerAssignment';
+import { addMonths } from '@/lib/membershipUtils';
+import { logAuditEvent } from '@/lib/auditLog';
+import { getRenewalInfo } from '@/lib/renewalTracking';
+import { shouldReactivateMembership, calculateGracePeriodEnd } from '@/lib/gracePeriod';
+import { generateInvoiceAsync } from '@/lib/invoiceService';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -43,6 +48,15 @@ export async function POST(
             return NextResponse.json({ error: 'Membership not found' }, { status: 404 });
         }
 
+        // Validate membership status before approval
+        // Allow approval for 'pending' (new purchase) or 'grace_period' (renewal)
+        if (membership.status !== 'pending' && membership.status !== 'grace_period') {
+            return NextResponse.json({
+                error: `Cannot approve membership. Current status is '${membership.status}'. Only memberships with 'pending' (new purchase) or 'grace_period' (renewal) status can be approved.`,
+                currentStatus: membership.status
+            }, { status: 400 });
+        }
+
         // Get admin's auth user ID (if exists) for verified_by field
         // The verified_by column references auth.users(id), not admins.id
         // Try to find admin's auth user by email
@@ -58,14 +72,23 @@ export async function POST(
             console.log('Admin does not have auth.users entry, verified_by will be null');
         }
 
-        // Check if this is a renewal (has multiple verified payments)
+        // Determine if this is a renewal using explicit renewal tracking
+        // Prefer renewal_of_membership_id field if available (explicit tracking)
+        // Fallback to payment count for backward compatibility with old data
+        const renewalInfo = getRenewalInfo(membership);
+        let isRenewal: boolean = renewalInfo.isRenewal;
+
+        // If not explicitly marked as renewal, check payment count (backward compatibility)
+        if (!isRenewal) {
         const { data: allPayments } = await supabaseAdmin
             .from('membership_payments')
             .select('*')
             .eq('membership_id', membershipId)
             .eq('status', 'verified');
 
-        const isRenewal = allPayments && allPayments.length > 1;
+            // Legacy: Consider it a renewal if more than 1 verified payment exists
+            isRenewal = Boolean(allPayments && allPayments.length > 1);
+        }
 
         // Verify payment - for both renewals and new memberships
         // Find the most recent pending payment (could be renewal or initial payment)
@@ -79,6 +102,24 @@ export async function POST(
             .single();
 
         if (pendingPayment) {
+            // First, reject all other pending payments for this membership (to prevent multiple approvals)
+            const { error: rejectOtherPaymentsError } = await supabaseAdmin
+                .from('membership_payments')
+                .update({
+                    status: 'rejected',
+                    verified_by: adminAuthUserId,
+                    verified_at: new Date().toISOString()
+                })
+                .eq('membership_id', membershipId)
+                .eq('status', 'pending')
+                .neq('id', pendingPayment.id);
+
+            if (rejectOtherPaymentsError) {
+                console.error('Error rejecting other pending payments:', rejectOtherPaymentsError);
+                // Don't fail - continue with verification
+            }
+
+            // Verify the selected payment
             const { error: verifyError } = await supabaseAdmin
                 .from('membership_payments')
                 .update({
@@ -98,22 +139,47 @@ export async function POST(
         }
 
         // For renewals, extend dates; for new memberships, create new dates
+        // SPECIAL CASE: Regular Monthly plans ALWAYS reset from approval date (not extend from expired dates)
         let startDate: Date;
         let endDate: Date;
 
+        const planName = membership.plan_name?.toLowerCase() || '';
+        const isRegularMonthly = planName.includes('regular') && (planName.includes('monthly') || membership.duration_months === 1);
+
         if (isRenewal) {
-            // Renewal: extend from current end date
-            const currentEndDate = membership.membership_end_date
-                ? new Date(membership.membership_end_date)
-                : new Date();
-            startDate = currentEndDate > new Date() ? currentEndDate : new Date();
-            endDate = new Date(startDate);
-            endDate.setMonth(endDate.getMonth() + membership.duration_months);
+            // Regular Monthly plans: ALWAYS reset from approval date (independent lifecycle)
+            // This ensures that when a Regular Monthly plan expires and is renewed, it starts fresh from approval date
+            // Trainer access is independent but coordinated - trainer period starts from membership start date
+            if (isRegularMonthly) {
+                // Regular Monthly renewal: reset from approval date (now), not extend from expired dates
+                startDate = new Date();
+                endDate = addMonths(startDate, membership.duration_months);
+                console.log('[APPROVE] Regular Monthly plan renewal - resetting dates from approval date:', {
+                    membershipId,
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString(),
+                    durationMonths: membership.duration_months,
+                    previousEndDate: membership.membership_end_date
+                });
+            } else {
+                // Other plans (Basic, Premium, Elite): extend from current end date
+                const currentEndDate = membership.membership_end_date
+                    ? new Date(membership.membership_end_date)
+                    : new Date();
+                startDate = currentEndDate > new Date() ? currentEndDate : new Date();
+                endDate = addMonths(startDate, membership.duration_months);
+                console.log('[APPROVE] Non-Regular plan renewal - extending from current end date:', {
+                    membershipId,
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString(),
+                    durationMonths: membership.duration_months,
+                    previousEndDate: membership.membership_end_date
+                });
+            }
         } else {
             // New membership: create new dates
             startDate = new Date();
-            endDate = new Date();
-            endDate.setMonth(endDate.getMonth() + membership.duration_months);
+            endDate = addMonths(startDate, membership.duration_months);
         }
 
         // Get membership addons to check for trainer
@@ -147,7 +213,7 @@ export async function POST(
             .single();
 
         // Determine trainer assignment logic
-        const planName = membership.plan_name.toLowerCase();
+        // Note: planName is already defined above
         let trainerId: string | null = null;
         let trainerPeriodEnd: Date | null = null;
 
@@ -155,7 +221,9 @@ export async function POST(
             // Use the trainer from pending assignment
             trainerId = pendingAssignment.trainer_id;
 
-            // Recalculate period with actual start date
+            // Recalculate period with actual start date (NEW membership start date for renewals)
+            // For Regular Monthly renewals with trainer addon, this creates a NEW independent trainer period
+            // starting from the renewed membership start date, not tied to any previous trainer assignment
             const assignmentConfig: TrainerAssignmentConfig = {
                 planName: membership.plan_name,
                 planMode: membership.plan_mode || 'Online',
@@ -165,7 +233,21 @@ export async function POST(
             };
 
             const { periodEnd } = calculateTrainerPeriod(startDate, assignmentConfig);
-            trainerPeriodEnd = periodEnd;
+            
+            // Ensure trainer period never exceeds membership end date (coordinated lifecycle)
+            // This is critical for Regular Monthly plans where trainer addon matches membership duration
+            trainerPeriodEnd = periodEnd > endDate ? endDate : periodEnd;
+            
+            console.log('[APPROVE] Trainer period calculated:', {
+                membershipId,
+                planName,
+                isRegularMonthly,
+                membershipStartDate: startDate.toISOString(),
+                membershipEndDate: endDate.toISOString(),
+                calculatedTrainerPeriodEnd: periodEnd.toISOString(),
+                finalTrainerPeriodEnd: trainerPeriodEnd.toISOString(),
+                trainerPeriodExceedsMembership: periodEnd > endDate
+            });
 
             // Update assignment with correct dates and status to 'assigned'
             // Note: We don't set assigned_by because admin ID might not be in users table
@@ -200,14 +282,22 @@ export async function POST(
             console.log(`Plan ${planName} includes trainer - admin should assign trainer via admin panel`);
         }
 
-        // Update membership status to approved and set dates
+        // Check if this is a grace period reactivation (renewal during grace period)
+        const isGracePeriodReactivation = shouldReactivateMembership(membership.status, membership.grace_period_end);
+
+        // Update membership status to active and set dates
         const updateData: any = {
-            status: 'approved',
+            status: 'active',
             start_date: startDate.toISOString(),
             end_date: endDate.toISOString(),
             membership_start_date: startDate.toISOString(),
             membership_end_date: endDate.toISOString()
         };
+
+        // Clear grace period end if reactivating from grace period
+        if (isGracePeriodReactivation) {
+            updateData.grace_period_end = null;
+        }
 
         // If trainer is assigned, update trainer fields
         if (trainerId && trainerPeriodEnd) {
@@ -217,14 +307,57 @@ export async function POST(
             updateData.trainer_addon = hasTrainerAddon;
         }
 
-        const { error: updateError } = await supabaseAdmin
+        // Use conditional update to prevent race conditions - only update if still 'pending' or 'grace_period'
+        const { error: updateError, data: updatedMembership } = await supabaseAdmin
             .from('memberships')
             .update(updateData)
-            .eq('id', membershipId);
+            .eq('id', membershipId)
+            .in('status', ['pending', 'grace_period']) // Only update if still pending or grace_period (prevents race conditions)
+            .select()
+            .single();
 
-        if (updateError) {
-            throw updateError;
+        if (updateError || !updatedMembership) {
+            console.error('[APPROVE] Critical error updating membership:', {
+                error: updateError,
+                membershipId,
+                updateData,
+                membershipStatus: membership.status
+            });
+            await logAuditEvent({
+                membership_id: membershipId,
+                action: 'status_changed',
+                admin_id: adminAuthUserId,
+                admin_email: admin.email,
+                previous_status: membership.status,
+                new_status: 'active',
+                details: `Failed to update membership: ${updateError?.message || 'Status changed before approval'} - Membership may have been modified concurrently`,
+                metadata: { error: updateError?.message, updateData, membershipStatus: membership.status }
+            });
+
+            // If payment was verified, we should potentially rollback, but Supabase doesn't support transactions easily
+            // Log the error and return appropriate message
+            return NextResponse.json({
+                error: `Failed to approve membership. Membership status may have changed (current: ${membership.status}). Please refresh and try again.`,
+                details: updateError?.message || 'Status changed before approval'
+            }, { status: 409 }); // 409 Conflict
         }
+
+        // Log successful approval to audit trail
+        await logAuditEvent({
+            membership_id: membershipId,
+            action: 'approved',
+            admin_id: adminAuthUserId,
+            admin_email: admin.email,
+            previous_status: membership.status,
+            new_status: 'active',
+            details: `Membership approved and activated. Plan: ${membership.plan_name}, Duration: ${membership.duration_months} months`,
+            metadata: {
+                start_date: startDate.toISOString(),
+                end_date: endDate.toISOString(),
+                is_renewal: isRenewal,
+                trainer_assigned: !!trainerId
+            }
+        });
 
         // If trainer was assigned, update assignment status
         // Note: We already updated the assignment status above, so we don't need to call assignTrainerToMembership
@@ -298,16 +431,6 @@ export async function POST(
             });
         }
 
-        // After approval, activate the membership
-        const { error: activateError } = await supabaseAdmin
-            .from('memberships')
-            .update({ status: 'active' })
-            .eq('id', membershipId);
-
-        if (activateError) {
-            // Don't throw - approval is still successful
-        }
-
         // Create notification for user
         const { data: notificationData, error: notificationError } = await supabaseAdmin
             .from('notifications')
@@ -344,6 +467,30 @@ export async function POST(
                 console.error('Failed to send real-time broadcast:', broadcastError);
                 // Don't throw - notification is still created in DB
             }
+        }
+
+        // Generate invoice for approved payment (non-blocking)
+        // Note: Invoice generation is done asynchronously to not block approval
+        // Invoice type will be determined from payment.payment_purpose in the invoice generation API
+        if (pendingPayment) {
+            // Determine invoice type from payment_purpose (explicit intent) or fallback to isRenewal
+            let invoiceType: 'initial' | 'renewal' | 'trainer_renewal';
+            
+            if (pendingPayment.payment_purpose === 'trainer_renewal') {
+                invoiceType = 'trainer_renewal';
+            } else if (pendingPayment.payment_purpose === 'membership_renewal') {
+                invoiceType = 'renewal';
+            } else if (pendingPayment.payment_purpose === 'initial_purchase') {
+                invoiceType = 'initial';
+            } else {
+                // Backward compatibility: infer from isRenewal if payment_purpose not set
+                invoiceType = isRenewal ? 'renewal' : 'initial';
+            }
+            
+            // Generate invoice asynchronously (don't await - non-blocking)
+            // Invoice generation API will use payment_purpose as source of truth
+            generateInvoiceAsync(pendingPayment.id, membershipId, invoiceType, admin.email, request.nextUrl.origin)
+                .catch(err => console.error('[APPROVE] Invoice generation error (async):', err));
         }
 
         return NextResponse.json({
