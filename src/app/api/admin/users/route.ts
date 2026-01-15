@@ -386,17 +386,17 @@ export async function DELETE(request: NextRequest) {
 
         // Step 12: Delete storage files (before deleting profile which might have avatar_url reference)
         try {
-            await deleteUserStorageFiles(id);
-            await deleteReferencedStorageFiles(id);
+        await deleteUserStorageFiles(id);
+        await deleteReferencedStorageFiles(id);
             deletedSteps.push('storage_files');
 
-            // Delete avatar if exists
-            if (profile?.avatar_url) {
-                const avatarPath = extractStoragePath(profile.avatar_url, 'avatars');
-                if (avatarPath) {
-                    try {
-                        await supabaseAdmin.storage.from('avatars').remove([avatarPath]);
-                    } catch (err) {
+        // Delete avatar if exists
+        if (profile?.avatar_url) {
+            const avatarPath = extractStoragePath(profile.avatar_url, 'avatars');
+            if (avatarPath) {
+                try {
+                    await supabaseAdmin.storage.from('avatars').remove([avatarPath]);
+                } catch (err) {
                         logger.warn('Error deleting avatar:', err);
                     }
                 }
@@ -459,22 +459,22 @@ export async function DELETE(request: NextRequest) {
 
         // Step 15: Audit log (only if deletion was successful)
         if (authUserDeleted) {
-            try {
-                await supabaseAdmin.from('admin_audit').insert([{
-                    admin_id: admin.id,
-                    action: 'delete',
-                    table_name: 'profiles',
-                    record_id: id,
+        try {
+            await supabaseAdmin.from('admin_audit').insert([{
+                admin_id: admin.id,
+                action: 'delete',
+                table_name: 'profiles',
+                record_id: id,
                     payload: {
                         user_name: userName,
                         deleted_steps: deletedSteps
                     },
-                    created_at: new Date().toISOString()
-                }]);
-            } catch (auditErr) {
+                created_at: new Date().toISOString()
+            }]);
+        } catch (auditErr) {
                 logger.warn('Failed to write audit log (users):', auditErr);
-                // Don't fail deletion if audit fails
-            }
+            // Don't fail deletion if audit fails
+        }
         }
 
         return NextResponse.json({

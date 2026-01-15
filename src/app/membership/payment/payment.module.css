@@ -162,6 +162,7 @@
 
 .section {
     margin-bottom: 2.5rem;
+    width: 100%;
 }
 
 .section:last-of-type {
@@ -180,15 +181,22 @@
 /* QR Code Section */
 .qrSection {
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
 }
 
 .qrCode {
     max-width: 300px;
-    width: 100%;
+    width: auto;
     height: auto;
     border-radius: 0.5rem;
     border: 2px solid #374151;
-    margin-bottom: 1rem;
+    margin: 0 auto 1rem auto;
+    display: block;
+    align-self: center;
 }
 
 .qrPlaceholder {
