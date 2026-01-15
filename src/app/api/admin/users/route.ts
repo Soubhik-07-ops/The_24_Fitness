@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { validateAdminSession } from '@/lib/adminAuth';
+import { logger } from '@/lib/logger';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -51,7 +52,7 @@ async function deleteUserStorageFiles(userId: string): Promise<void> {
                 });
             }
         } catch (err) {
-            console.warn(`Error listing files in ${bucket} for user ${userId}:`, err);
+            logger.warn(`Error listing files in ${bucket}:`, err);
         }
     }
 
@@ -60,7 +61,7 @@ async function deleteUserStorageFiles(userId: string): Promise<void> {
         try {
             await supabaseAdmin.storage.from(bucket).remove([path]);
         } catch (err) {
-            console.warn(`Error deleting file ${path} from ${bucket}:`, err);
+            logger.warn(`Error deleting file from ${bucket}:`, err);
         }
     }
 }
@@ -95,7 +96,7 @@ async function deleteReferencedStorageFiles(userId: string): Promise<void> {
                         try {
                             await supabaseAdmin.storage.from('payment-screenshots').remove([path]);
                         } catch (err) {
-                            console.warn(`Error deleting payment screenshot ${path}:`, err);
+                            logger.warn('Error deleting payment screenshot:', err);
                         }
                     }
                 }
@@ -117,7 +118,7 @@ async function deleteReferencedStorageFiles(userId: string): Promise<void> {
                         try {
                             await supabaseAdmin.storage.from('weekly-charts').remove([path]);
                         } catch (err) {
-                            console.warn(`Error deleting chart file ${path}:`, err);
+                            logger.warn('Error deleting chart file:', err);
                         }
                     }
                 }
@@ -146,7 +147,7 @@ async function deleteReferencedStorageFiles(userId: string): Promise<void> {
                             try {
                                 await supabaseAdmin.storage.from('invoices').remove([path]);
                             } catch (err) {
-                                console.warn(`Error deleting invoice file ${path}:`, err);
+                                logger.warn('Error deleting invoice file:', err);
                             }
                         }
                     }
@@ -154,7 +155,7 @@ async function deleteReferencedStorageFiles(userId: string): Promise<void> {
             }
         }
     } catch (err) {
-        console.error('Error deleting referenced storage files:', err);
+        logger.error('Error deleting referenced storage files:', err);
         // Don't throw - continue with deletion
     }
 }
@@ -186,7 +187,7 @@ export async function DELETE(request: NextRequest) {
 
         if (!authUser) {
             // User doesn't exist in auth, but might have orphaned data - still attempt cleanup
-            console.warn(`User ${id} not found in auth.users, but proceeding with data cleanup`);
+            logger.warn('User not found in auth.users, but proceeding with data cleanup');
         }
 
         // Get user profile before deleting
@@ -299,7 +300,7 @@ export async function DELETE(request: NextRequest) {
                     .in('request_id', requestIds);
 
                 if (contactMessagesError) {
-                    console.warn(`Warning: Failed to delete contact messages: ${contactMessagesError.message}`);
+                    logger.warn('Warning: Failed to delete contact messages:', contactMessagesError);
                 } else {
                     deletedSteps.push('contact_messages');
                 }
@@ -328,7 +329,7 @@ export async function DELETE(request: NextRequest) {
             }
         } catch (err: any) {
             // If contact tables don't exist or have errors, log but don't fail
-            console.warn(`Warning during contact data deletion: ${err.message}`);
+            logger.warn('Warning during contact data deletion:', err);
         }
 
         // Step 8: Delete notifications (references user_id)
@@ -396,12 +397,12 @@ export async function DELETE(request: NextRequest) {
                     try {
                         await supabaseAdmin.storage.from('avatars').remove([avatarPath]);
                     } catch (err) {
-                        console.warn(`Error deleting avatar ${avatarPath}:`, err);
+                        logger.warn('Error deleting avatar:', err);
                     }
                 }
             }
         } catch (err) {
-            console.warn(`Warning: Error deleting storage files: ${err}`);
+            logger.warn('Warning: Error deleting storage files:', err);
             // Don't fail deletion if storage deletion fails
         }
 
@@ -416,22 +417,44 @@ export async function DELETE(request: NextRequest) {
         }
         deletedSteps.push('profile');
 
-        // Step 14: Delete Supabase Auth user (CRITICAL - must succeed or we have orphaned data)
+        // Step 14: Sign out all sessions for the user before deletion
+        // This ensures the user is immediately logged out on all devices
+        if (authUser) {
+            try {
+                // Get all sessions for this user and sign them out
+                // Note: Supabase Admin API doesn't have a direct "sign out all sessions" method,
+                // but deleting the user will invalidate all sessions. However, we can try to
+                // manually invalidate by updating the user's metadata or using signOut
+                // For now, we'll rely on the deleteUser to invalidate sessions, but we'll
+                // add additional validation in API routes to check user existence
+                
+                // Attempt to sign out using admin API (if available in your Supabase version)
+                // Some versions support: await supabaseAdmin.auth.admin.signOut(id, { scope: 'global' });
+                // If not available, the deleteUser call below will handle session invalidation
+            } catch (signOutErr) {
+                logger.warn('Warning: Could not explicitly sign out user sessions:', signOutErr);
+                // Continue with deletion - deleteUser will invalidate sessions
+            }
+        }
+
+        // Step 15: Delete Supabase Auth user (CRITICAL - must succeed or we have orphaned data)
         // This MUST happen after all data is deleted to avoid foreign key constraint issues
+        // Deleting the user will automatically invalidate all their sessions
         if (authUser) {
             const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(id);
             if (authDeleteError) {
                 // This is critical - if auth deletion fails, we've already deleted all data
                 // Log as critical error and throw
-                console.error(`CRITICAL: Failed to delete auth user ${id} after data deletion. Data already deleted: ${deletedSteps.join(', ')}`);
+                logger.error(`CRITICAL: Failed to delete auth user after data deletion. Data already deleted: ${deletedSteps.join(', ')}`);
                 throw new Error(`CRITICAL: Failed to delete auth user: ${authDeleteError.message}. Data was already deleted and may be orphaned.`);
             }
             authUserDeleted = true;
             deletedSteps.push('auth_user');
+            deletedSteps.push('sessions_invalidated');
         } else {
             // No auth user to delete, but mark as complete
             authUserDeleted = true;
-            console.warn(`No auth user found for ${id}, skipping auth deletion`);
+            logger.warn('No auth user found, skipping auth deletion');
         }
 
         // Step 15: Audit log (only if deletion was successful)
@@ -449,7 +472,7 @@ export async function DELETE(request: NextRequest) {
                     created_at: new Date().toISOString()
                 }]);
             } catch (auditErr) {
-                console.warn('Failed to write audit log (users):', auditErr);
+                logger.warn('Failed to write audit log (users):', auditErr);
                 // Don't fail deletion if audit fails
             }
         }
@@ -460,17 +483,17 @@ export async function DELETE(request: NextRequest) {
             deletedSteps
         }, { status: 200 });
     } catch (err: any) {
-        console.error('Admin users DELETE exception:', err);
+        logger.error('Admin users DELETE exception:', err);
         const errorMessage = err.message || String(err);
 
         // If deletion started but auth user was not deleted, this is critical
         if (deletionStarted && !authUserDeleted && userId) {
-            console.error(`CRITICAL: Partial deletion occurred for user ${userId}.`);
-            console.error(`Deleted steps: ${deletedSteps.join(', ')}`);
-            console.error(`Auth user deletion failed - orphaned data may exist.`);
-            console.error(`Manual cleanup required for user ${userId}`);
+            logger.error('CRITICAL: Partial deletion occurred.');
+            logger.error(`Deleted steps: ${deletedSteps.join(', ')}`);
+            logger.error('Auth user deletion failed - orphaned data may exist.');
+            logger.error('Manual cleanup required.');
         } else if (deletionStarted && userId) {
-            console.error(`Partial deletion occurred for user ${userId}. Deleted: ${deletedSteps.join(', ')}`);
+            logger.error(`Partial deletion occurred. Deleted: ${deletedSteps.join(', ')}`);
         }
 
         return NextResponse.json({

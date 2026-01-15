@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { type User as SupabaseUser } from '@supabase/supabase-js';
+import { logger } from '@/lib/logger';
 import styles from './Dashboard.module.css';
 import { Edit3, User, Wifi, WifiOff, Calendar, FileText, CheckCircle, Clock, XCircle, MessageSquare, Download, ArrowRight, TrendingUp, CreditCard, Award, Activity, Bell, Target, Eye, X, ChevronRight, Receipt } from 'lucide-react';
 import { getMembershipExpirationStatus as getMembershipExpirationStatusUtil, getTrainerPeriodExpirationStatus as getTrainerPeriodExpirationStatusUtil } from '@/lib/membershipUtils';
@@ -120,10 +121,10 @@ export default function Dashboard() {
                 }
             } else {
                 const errorData = await response.json();
-                console.error('Error fetching membership history:', errorData);
+                logger.error('Error fetching membership history:', errorData);
             }
         } catch (error) {
-            console.error('Error fetching membership history:', error);
+            logger.error('Error fetching membership history:', error);
         } finally {
             setLoadingHistory(false);
         }
@@ -184,7 +185,7 @@ export default function Dashboard() {
     const fetchAllWeeklyCharts = useCallback(async (membershipIds: number[]) => {
         try {
             setChartsLoading(true);
-            console.log('[DASHBOARD] Fetching weekly charts for memberships:', membershipIds);
+            logger.debug('[DASHBOARD] Fetching weekly charts');
 
             if (membershipIds.length === 0) {
                 setWeeklyCharts([]);
@@ -212,7 +213,7 @@ export default function Dashboard() {
                 return;
             }
 
-            console.log('[DASHBOARD] Fetched charts for all memberships:', charts?.length || 0, charts);
+            logger.debug(`[DASHBOARD] Fetched ${charts?.length || 0} charts`);
 
             // If there are charts with created_by (trainer IDs), fetch trainer names
             if (charts && charts.length > 0) {
@@ -220,7 +221,7 @@ export default function Dashboard() {
                     .map(chart => chart.created_by)
                     .filter((id): id is string => id !== null && id !== undefined);
 
-                console.log('[DASHBOARD] Trainer IDs found:', trainerIds);
+                logger.debug(`[DASHBOARD] Found ${trainerIds.length} trainers`);
 
                 if (trainerIds.length > 0) {
                     const { data: trainers, error: trainersError } = await supabase
@@ -232,8 +233,6 @@ export default function Dashboard() {
                         console.error('[DASHBOARD] Error fetching trainers:', trainersError);
                     }
 
-                    console.log('[DASHBOARD] Fetched trainers:', trainers);
-
                     // Map trainer data to charts
                     const chartsWithTrainers = charts.map(chart => ({
                         ...chart,
@@ -242,14 +241,14 @@ export default function Dashboard() {
                             : null
                     }));
 
-                    console.log('[DASHBOARD] Setting charts with trainers:', chartsWithTrainers);
+                    logger.debug('[DASHBOARD] Charts mapped with trainers');
                     setWeeklyCharts(chartsWithTrainers);
                 } else {
-                    console.log('[DASHBOARD] Setting charts without trainers:', charts);
+                    logger.debug('[DASHBOARD] Charts without trainers');
                     setWeeklyCharts(charts);
                 }
             } else {
-                console.log('[DASHBOARD] No charts found for memberships:', membershipIds);
+                logger.debug('[DASHBOARD] No charts found');
                 setWeeklyCharts([]);
             }
         } catch (error) {
@@ -294,7 +293,7 @@ export default function Dashboard() {
             if (error) {
                 console.error('Error fetching memberships:', error);
             } else if (memberships && memberships.length > 0) {
-                console.log('[DASHBOARD] Memberships loaded:', memberships.length, memberships);
+                logger.debug(`[DASHBOARD] ${memberships.length} memberships loaded`);
 
                 // Fetch trainer names for memberships with trainers
                 const membershipsWithTrainers = await Promise.all(
@@ -402,10 +401,10 @@ export default function Dashboard() {
                 });
 
                 if (chartEligibleMemberships.length > 0) {
-                    console.log('[DASHBOARD] Found', chartEligibleMemberships.length, 'chart-eligible active memberships, fetching charts...');
+                    logger.debug(`[DASHBOARD] Found ${chartEligibleMemberships.length} chart-eligible memberships`);
                     fetchAllWeeklyCharts(chartEligibleMemberships.map(m => m.id));
                 } else {
-                    console.log('[DASHBOARD] No chart-eligible memberships found (Regular plans need trainer addon for charts)');
+                    logger.debug('[DASHBOARD] No chart-eligible memberships found');
                     setWeeklyCharts([]);
                     setChartsLoading(false);
                 }
@@ -494,7 +493,7 @@ export default function Dashboard() {
         if (chartEligibleMemberships.length === 0) return;
 
         const membershipIds = chartEligibleMemberships.map(m => m.id);
-        console.log('[DASHBOARD] Setting up realtime subscriptions for memberships:', membershipIds);
+        logger.debug(`[DASHBOARD] Setting up realtime subscriptions for ${membershipIds.length} memberships`);
 
         // Create a channel for each active membership
         const channels = membershipIds.map(membershipId => {
@@ -509,7 +508,7 @@ export default function Dashboard() {
                         filter: `membership_id=eq.${membershipId}`
                     },
                     () => {
-                        console.log('[DASHBOARD] Weekly chart changed for membership', membershipId, ', refreshing...');
+                        logger.debug('[DASHBOARD] Weekly chart changed, refreshing...');
                         fetchAllWeeklyCharts(membershipIds);
                     }
                 )

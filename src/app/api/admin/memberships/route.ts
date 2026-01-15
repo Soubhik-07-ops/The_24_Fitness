@@ -46,11 +46,9 @@ export async function GET(request: NextRequest) {
             throw membershipsError;
         }
 
-        // Debug logging
-        console.log('Admin memberships API - Total memberships found:', memberships?.length || 0);
-        if (memberships && memberships.length > 0) {
-            console.log('Membership statuses:', memberships.map(m => ({ id: m.id, status: m.status })));
-        }
+        // Debug logging (only in development)
+        const { logger } = await import('@/lib/logger');
+        logger.debug('Admin memberships API - Total memberships found:', memberships?.length || 0);
 
         // Get unique user IDs
         const userIds = [...new Set(memberships?.map(m => m.user_id) || [])];

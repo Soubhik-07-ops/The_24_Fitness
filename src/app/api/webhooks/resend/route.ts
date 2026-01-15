@@ -165,7 +165,8 @@ async function logWebhookFailure(
     emailId: string
 ): Promise<void> {
     if (!userId) {
-        console.log(`[RESEND WEBHOOK] Cannot log failure - no user ID found for email: ${emailAddress}`);
+        const { logger } = await import('@/lib/logger');
+        logger.warn('[RESEND WEBHOOK] Cannot log failure - no user ID found for email');
         return;
     }
 

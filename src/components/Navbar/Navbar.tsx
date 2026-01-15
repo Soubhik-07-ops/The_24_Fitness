@@ -9,6 +9,7 @@ import { type User } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import NotificationBell from '@/components/Notifications/NotificationBell'
+import { logger } from '@/lib/logger'
 
 export default function Navbar() {
     const [isOpen, setIsOpen] = useState(false)
@@ -36,9 +37,89 @@ export default function Navbar() {
         }
         getSession()
 
-        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+        let profileChannel: ReturnType<typeof supabase.channel> | null = null
+        let validationInterval: NodeJS.Timeout | null = null
+
+        const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
             setUser(session?.user ?? null)
-            // Removed router.refresh() to prevent unnecessary re-renders
+
+            // Clean up previous subscriptions
+            if (profileChannel) {
+                await supabase.removeChannel(profileChannel)
+                profileChannel = null
+            }
+            if (validationInterval) {
+                clearInterval(validationInterval)
+                validationInterval = null
+            }
+
+            // Only set up deletion detection if user is signed in
+            if (event === 'SIGNED_IN' && session?.user?.id) {
+                const userId = session.user.id
+
+                // Method 1: Real-time detection via Supabase Realtime
+                // Listen for DELETE events on the profiles table for this user
+                profileChannel = supabase
+                    .channel(`user_deletion_${userId}`)
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'DELETE',
+                            schema: 'public',
+                            table: 'profiles',
+                            filter: `id=eq.${userId}`
+                        },
+                        async (payload) => {
+                            // User profile was deleted - sign out immediately
+                            logger.debug('[NAVBAR] User profile deleted detected via Realtime, signing out')
+                            await supabase.auth.signOut()
+                            setUser(null)
+                            router.push('/')
+                        }
+                    )
+                    .subscribe((status) => {
+                        if (status === 'SUBSCRIBED') {
+                            logger.debug('[NAVBAR] Subscribed to profile deletion events')
+                        }
+                    })
+
+                // Method 2: Periodic validation check (every 30 seconds)
+                // This is a fallback in case Realtime doesn't catch the deletion
+                // Only signs out if user is actually deleted, not on network errors
+                validationInterval = setInterval(async () => {
+                    try {
+                        const { data: { session: currentSession } } = await supabase.auth.getSession()
+                        if (!currentSession?.access_token) {
+                            return // No session, skip check
+                        }
+
+                        // Validate user still exists via API (checks both profile and auth user)
+                        const response = await fetch('/api/notifications/check', {
+                            headers: {
+                                'Authorization': `Bearer ${currentSession.access_token}`
+                            },
+                            credentials: 'include',
+                            cache: 'no-store'
+                        })
+
+                        // Only sign out if we get a specific "deleted" error, not network errors
+                        if (response.status === 401) {
+                            const errorData = await response.json().catch(() => ({}))
+                            // Only sign out if explicitly told the user was deleted
+                            if (errorData.error?.includes('deleted') || errorData.error?.includes('User was deleted')) {
+                                logger.debug('[NAVBAR] User deleted detected via validation check, signing out')
+                                await supabase.auth.signOut()
+                                setUser(null)
+                                router.push('/')
+                            }
+                        }
+                        // If it's a network error or other error, ignore it (don't sign out)
+                    } catch (err) {
+                        // Silently fail - network errors should not trigger logout
+                        logger.debug('[NAVBAR] Validation check error (non-critical):', err)
+                    }
+                }, 30000) // Check every 30 seconds
+            }
         })
 
         // ✅ Listen for resize AFTER mount
@@ -53,6 +134,12 @@ export default function Navbar() {
         return () => {
             authListener.subscription.unsubscribe()
             window.removeEventListener('resize', handleResize)
+            if (profileChannel) {
+                supabase.removeChannel(profileChannel)
+            }
+            if (validationInterval) {
+                clearInterval(validationInterval)
+            }
         }
     }, [router, isOpen])
 

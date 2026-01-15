@@ -269,7 +269,8 @@ function NotificationBell({ mode }: { mode: 'user' | 'admin' | 'trainer' }) {
                     .channel(`notify_user_${userId}`)
                     .on('broadcast', { event: 'membership_approved' }, async (payload: any) => {
                         const { notificationId } = payload.payload || {};
-                        console.log('[USER NOTIFICATIONS] Received membership_approved broadcast on notify_user channel, reloading...', { notificationId });
+                        const { logger } = await import('@/lib/logger');
+                        logger.debug('[USER NOTIFICATIONS] Received membership_approved broadcast');
 
                         // Reload notifications immediately
                         const { data, error } = await supabase
@@ -288,7 +289,8 @@ function NotificationBell({ mode }: { mode: 'user' | 'admin' | 'trainer' }) {
                     })
                     .on('broadcast', { event: 'membership_rejected' }, async (payload: any) => {
                         const { notificationId } = payload.payload || {};
-                        console.log('[USER NOTIFICATIONS] Received membership_rejected broadcast on notify_user channel, reloading...', { notificationId });
+                        const { logger } = await import('@/lib/logger');
+                        logger.debug('[USER NOTIFICATIONS] Received membership_rejected broadcast');
 
                         // Reload notifications immediately
                         const { data, error } = await supabase

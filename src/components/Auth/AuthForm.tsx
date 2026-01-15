@@ -101,15 +101,43 @@ export default function AuthForm() {
 
                 if (error) throw error;
 
+                // Store user ID BEFORE signout (needed for welcome email)
+                const userId = data.user?.id;
+
+                // Send welcome email IMMEDIATELY after signup (before signout)
+                // This ensures we have the user ID before session is cleared
+                if (userId) {
+                    try {
+                        const { logger } = await import('@/lib/logger');
+                        logger.debug('[AUTH FORM] Sending welcome email');
+                        // Send welcome email BEFORE signing out (user ID is still available)
+                        const welcomeEmailResponse = await fetch('/api/auth/send-welcome-email', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ userId })
+                        });
+                        
+                        const welcomeEmailData = await welcomeEmailResponse.json();
+                        if (welcomeEmailResponse.ok) {
+                            console.log('[AUTH FORM] Welcome email sent successfully:', welcomeEmailData);
+                        } else {
+                            console.error('[AUTH FORM] Welcome email failed:', welcomeEmailData);
+                        }
+                    } catch (welcomeEmailError) {
+                        // Don't fail signup if welcome email fails
+                        console.error('[AUTH FORM] Exception sending welcome email:', welcomeEmailError);
+                    }
+                }
+
                 // Create profile with phone number if user was created
-                if (data.user?.id) {
+                if (userId) {
                     try {
                         // Create/update profile with phone number
                         const phoneDigits = phone.replace(/\D/g, '');
                         const { error: profileError } = await supabase
                             .from('profiles')
                             .upsert({
-                                id: data.user.id,
+                                id: userId,
                                 full_name: fullName,
                                 phone: phoneDigits,
                                 updated_at: new Date().toISOString()
@@ -124,7 +152,7 @@ export default function AuthForm() {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                userId: data.user.id,
+                                userId: userId,
                                 email: email,
                                 fullName: fullName
                             })
@@ -204,21 +232,6 @@ export default function AuthForm() {
 
                 setMessage('Account created successfully! Please log in.');
                 setIsSigningUp(false);
-
-                // Send welcome email on signup (only once, idempotent check in email service)
-                try {
-                    const { data: { user } } = await supabase.auth.getUser();
-                    if (user) {
-                        await fetch('/api/auth/send-welcome-email', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ userId: user.id })
-                        });
-                    }
-                } catch (welcomeEmailError) {
-                    // Don't fail signup if welcome email fails
-                    console.error('Failed to send welcome email:', welcomeEmailError);
-                }
 
                 // Clear form (keep email for convenience)
                 // setEmail(''); // Keep email so user can easily log in

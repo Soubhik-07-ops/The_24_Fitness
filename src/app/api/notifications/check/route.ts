@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/logger';
+import { validateUserAuth } from '@/lib/userAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -21,10 +22,10 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }
 
-        // Verify user
-        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-        if (authError || !user) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+        // Verify user exists and is valid (not deleted)
+        const user = await validateUserAuth(token);
+        if (!user) {
+            return NextResponse.json({ error: 'User was deleted or not authenticated' }, { status: 401 });
         }
 
         // Get user notifications

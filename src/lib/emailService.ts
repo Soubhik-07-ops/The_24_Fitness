@@ -19,7 +19,10 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 // Initialize Resend client
 const resendApiKey = process.env.RESEND_API_KEY;
 if (!resendApiKey) {
-    console.warn('[EMAIL SERVICE] RESEND_API_KEY not found. Email sending will be disabled.');
+    console.error('[EMAIL SERVICE] ❌ RESEND_API_KEY not found. Email sending will be disabled.');
+    console.error('[EMAIL SERVICE] Please add RESEND_API_KEY to your .env.local file');
+} else {
+    console.log('[EMAIL SERVICE] ✅ RESEND_API_KEY found:', resendApiKey.substring(0, 10) + '...');
 }
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
@@ -154,9 +157,20 @@ async function sendEmail(
     maxRetries: number = 3
 ): Promise<{ success: boolean; error?: string; emailId?: string }> {
     if (!resend) {
-        console.error('[EMAIL SERVICE] Resend not configured. Email not sent:', { to, subject });
-        return { success: false, error: 'Email service not configured' };
+        const errorMsg = 'Email service not configured - RESEND_API_KEY missing';
+        console.error('[EMAIL SERVICE]', errorMsg, { to, subject });
+        console.error('[EMAIL SERVICE] Check environment variables: RESEND_API_KEY must be set');
+        return { success: false, error: errorMsg };
     }
+
+    // Log email attempt with configuration details
+    console.log('[EMAIL SERVICE] Attempting to send email:', {
+        to,
+        subject,
+        from: FROM_EMAIL,
+        hasApiKey: !!resendApiKey,
+        apiKeyPrefix: resendApiKey?.substring(0, 5) + '...' || 'none'
+    });
 
     let lastError: string | undefined;
     
@@ -172,6 +186,17 @@ async function sendEmail(
 
             if (error) {
                 lastError = error.message || 'Failed to send email';
+                
+                // Log detailed error information
+                console.error('[EMAIL SERVICE] Resend API error:', {
+                    attempt,
+                    statusCode: error.statusCode,
+                    message: error.message,
+                    name: error.name,
+                    to,
+                    subject,
+                    from: FROM_EMAIL
+                });
                 
                 // Retry on transient errors (rate limits, network issues)
                 const isTransientError = 
@@ -189,15 +214,35 @@ async function sendEmail(
                 }
                 
                 // Non-transient error or max retries reached
-                console.error('[EMAIL SERVICE] Resend error:', error);
+                console.error('[EMAIL SERVICE] Failed to send email after all retries:', {
+                    error: lastError,
+                    statusCode: error.statusCode,
+                    to,
+                    subject
+                });
                 return { success: false, error: lastError };
             }
 
             // Success
-            console.log('[EMAIL SERVICE] Email sent successfully:', { to, subject, id: data?.id, attempt });
+            console.log('[EMAIL SERVICE] Email sent successfully:', { 
+                to, 
+                subject, 
+                id: data?.id, 
+                attempt,
+                from: FROM_EMAIL
+            });
             return { success: true, emailId: data?.id };
         } catch (error: any) {
             lastError = error.message || 'Failed to send email';
+            
+            // Log exception details
+            console.error('[EMAIL SERVICE] Exception sending email:', {
+                attempt,
+                error: error.message,
+                stack: error.stack,
+                to,
+                subject
+            });
             
             // Retry on network exceptions
             if (attempt < maxRetries) {
@@ -287,7 +332,8 @@ export async function sendPlanExpiryReminder(
 
     // Idempotency check: Skip if already sent
     if (await hasEmailBeenSent(userId, membershipId, eventType)) {
-        console.log('[EMAIL SERVICE] Plan expiry reminder already sent, skipping:', { userId, membershipId });
+        const { logger } = await import('@/lib/logger');
+        logger.debug('[EMAIL SERVICE] Plan expiry reminder already sent, skipping');
         return { success: true }; // Already sent, consider success
     }
 
@@ -340,7 +386,8 @@ export async function sendPlanExpiryDayEmail(
 
     // Idempotency check: Skip if already sent
     if (await hasEmailBeenSent(userId, membershipId, eventType)) {
-        console.log('[EMAIL SERVICE] Plan expiry day email already sent, skipping:', { userId, membershipId });
+        const { logger } = await import('@/lib/logger');
+        logger.debug('[EMAIL SERVICE] Plan expiry day email already sent, skipping');
         return { success: true };
     }
 
@@ -417,7 +464,8 @@ export async function sendGracePeriodStartEmail(
 
     // Idempotency check: Skip if already sent
     if (await hasEmailBeenSent(userId, membershipId, eventType)) {
-        console.log('[EMAIL SERVICE] Grace period start email already sent, skipping:', { userId, membershipId });
+        const { logger } = await import('@/lib/logger');
+        logger.debug('[EMAIL SERVICE] Grace period start email already sent, skipping');
         return { success: true };
     }
 
@@ -501,7 +549,8 @@ export async function sendGracePeriodEndEmail(
 
     // Idempotency check: Skip if already sent
     if (await hasEmailBeenSent(userId, membershipId, eventType)) {
-        console.log('[EMAIL SERVICE] Grace period end email already sent, skipping:', { userId, membershipId });
+        const { logger } = await import('@/lib/logger');
+        logger.debug('[EMAIL SERVICE] Grace period end email already sent, skipping');
         return { success: true };
     }
 
@@ -575,7 +624,8 @@ export async function sendWelcomeEmail(
 
     // Idempotency check: Skip if already sent
     if (await hasEmailBeenSent(userId, null, eventType)) {
-        console.log('[EMAIL SERVICE] Welcome email already sent, skipping:', { userId });
+        const { logger } = await import('@/lib/logger');
+        logger.debug('[EMAIL SERVICE] Welcome email already sent, skipping');
         return { success: true };
     }
 

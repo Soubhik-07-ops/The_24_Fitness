@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { usePathname } from 'next/navigation';
 import Toast from '@/components/Toast/Toast';
 import { useToast } from '@/hooks/useToast';
+import { logger } from '@/lib/logger';
 
 export default function RealtimeNotifications({ mode }: { mode: 'user' | 'admin' | 'trainer' }) {
     const pathname = usePathname();
@@ -26,10 +27,9 @@ export default function RealtimeNotifications({ mode }: { mode: 'user' | 'admin'
                 const { data } = await supabase.auth.getUser();
                 const userId = data.user?.id;
                 if (!userId) {
-                    console.log('[USER NOTIFICATIONS] No user ID found, skipping setup');
                     return;
                 }
-                console.log('[USER NOTIFICATIONS] Setting up notifications for user:', userId);
+                logger.debug('[USER NOTIFICATIONS] Setting up notifications');
 
                 // Subscribe to DB notifications for this user
                 const ch = supabase
@@ -297,14 +297,13 @@ export default function RealtimeNotifications({ mode }: { mode: 'user' | 'admin'
                                 }
                             })
                     .on('broadcast', { event: 'new_message' }, (payload: any) => {
-                        console.log('[TRAINER NOTIFICATIONS] Received broadcast:', payload);
+                        logger.debug('[TRAINER NOTIFICATIONS] Received broadcast');
                         const { userId, userName, by, notificationType } = payload.payload || {};
-                        console.log('[TRAINER NOTIFICATIONS] Parsed payload - userId:', userId, 'userName:', userName, 'by:', by, 'notificationType:', notificationType);
 
                         // IMPORTANT: Skip if this is a user notification (trainer_assigned, booking_submitted, etc.)
                         // These are meant for users, not trainers
                         if (notificationType && (notificationType === 'trainer_assigned' || notificationType === 'booking_submitted')) {
-                            console.log('[TRAINER NOTIFICATIONS] Skipping - this is a user notification type:', notificationType);
+                            logger.debug('[TRAINER NOTIFICATIONS] Skipping user notification type');
                             return;
                         }
 

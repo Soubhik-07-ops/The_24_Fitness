@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { ArrowLeft, Send, User, RefreshCw } from 'lucide-react';
 import Toast from '@/components/Toast/Toast';
 import { useToast } from '@/hooks/useToast';
+import { logger } from '@/lib/logger';
 import styles from './chat.module.css';
 
 interface ChatMessage {
@@ -216,7 +217,7 @@ export default function TrainerChatPage() {
                 console.error('[TRAINER TYPING] Error sending typing indicator:', error);
             }
         } else {
-            console.log('[TRAINER TYPING] Cannot send - channel:', !!typingChannelRef.current, 'trainerId:', trainerId, 'userId:', userId);
+            logger.debug('[TRAINER TYPING] Cannot send - channel not ready');
         }
     };
 

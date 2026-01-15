@@ -7,6 +7,7 @@ import { Send } from 'lucide-react';
 import Toast from '@/components/Toast/Toast';
 import { useToast } from '@/hooks/useToast';
 import { checkTrainerMessagingAccess } from '@/lib/trainerMessagingAccess';
+import { logger } from '@/lib/logger';
 
 interface ChatMessage {
     id: string;
@@ -249,7 +250,7 @@ export default function TrainerChatWindow({ trainerId, trainerName }: TrainerCha
                 console.error('[USER TYPING] Error sending typing indicator:', error);
             }
         } else {
-            console.log('[USER TYPING] Cannot send - channel:', !!typingChannelRef.current, 'userId:', userId, 'trainerId:', trainerId);
+            logger.debug('[USER TYPING] Cannot send - channel not ready');
         }
     };
 

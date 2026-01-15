@@ -25,10 +25,11 @@ export async function GET(
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }
 
-        // Verify user with service role
-        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-        if (authError || !user) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+        // Verify user with service role and check user still exists
+        const { validateUserAuth } = await import('@/lib/userAuth');
+        const user = await validateUserAuth(token);
+        if (!user) {
+            return NextResponse.json({ error: 'Not authenticated or user account has been deleted' }, { status: 401 });
         }
 
         // Verify the request belongs to this user

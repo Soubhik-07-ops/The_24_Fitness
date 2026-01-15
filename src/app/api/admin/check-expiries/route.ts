@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { validateAdminSession } from '@/lib/adminAuth';
+import { logger } from '@/lib/logger';
 import { EXPIRATION_WARNING_DAYS } from '@/lib/membershipUtils';
 import {
     calculateGracePeriodEnd,
@@ -122,9 +123,10 @@ export async function POST(request: NextRequest) {
 
                 if (result.success) {
                     planExpiryReminderEmailsSent++;
-                    console.log(`[EMAIL] Plan expiry reminder sent to user ${membership.user_id} for membership ${membership.id}`);
+                    const { logger } = await import('@/lib/logger');
+                    logger.debug('[EMAIL] Plan expiry reminder sent');
                 } else {
-                    console.error(`[EMAIL] Failed to send plan expiry reminder:`, result.error);
+                    logger.error('[EMAIL] Failed to send plan expiry reminder:', result.error);
                 }
             }
         }
@@ -199,9 +201,10 @@ export async function POST(request: NextRequest) {
 
                 if (result.success) {
                     planExpiryDayEmailsSent++;
-                    console.log(`[EMAIL] Plan expiry day email sent to user ${membership.user_id} for membership ${membership.id}`);
+                    const { logger } = await import('@/lib/logger');
+                    logger.debug('[EMAIL] Plan expiry day email sent');
                 } else {
-                    console.error(`[EMAIL] Failed to send plan expiry day email:`, result.error);
+                    logger.error('[EMAIL] Failed to send plan expiry day email:', result.error);
                 }
             }
         }
@@ -326,7 +329,7 @@ export async function POST(request: NextRequest) {
 
                     if (!updateError) {
                         transitionedTrainerToGracePeriod++;
-                        console.log(`[EXPIRY] Transitioned trainer period for membership ${membership.id} to grace period`);
+                        logger.debug('[EXPIRY] Transitioned trainer period to grace period');
 
                         // Send notification for trainer grace period start (5 days remaining)
                         notifications.push({
@@ -366,7 +369,7 @@ export async function POST(request: NextRequest) {
                             details: `Trainer period transitioned to grace period. Grace period ends: ${trainerGracePeriodEnd.toISOString()}`
                         });
                     } else {
-                        console.error(`[EXPIRY] Error transitioning trainer period for membership ${membership.id} to grace period:`, updateError);
+                        logger.error('[EXPIRY] Error transitioning trainer period to grace period:', updateError);
                     }
                 }
             }
@@ -430,7 +433,7 @@ export async function POST(request: NextRequest) {
 
                 if (!updateError) {
                     trainerGracePeriodExpired++;
-                    console.log(`[EXPIRY] Revoked trainer access for membership ${membership.id} after grace period`);
+                    logger.debug('[EXPIRY] Revoked trainer access after grace period');
 
                     // User notification
                     notifications.push({
@@ -470,7 +473,7 @@ export async function POST(request: NextRequest) {
                         details: `Trainer access revoked after grace period ended.`
                     });
                 } else {
-                    console.error(`[EXPIRY] Error revoking trainer access for membership ${membership.id}:`, updateError);
+                    logger.error('[EXPIRY] Error revoking trainer access:', updateError);
                 }
             }
         }
@@ -504,7 +507,7 @@ export async function POST(request: NextRequest) {
                         updateData.trainer_id = null;
                         updateData.trainer_period_end = null;
                         updateData.trainer_grace_period_end = null;
-                        console.log(`[EXPIRY] Regular Monthly plan ${membership.id}: Expiring trainer access with membership expiry`);
+                        logger.debug('[EXPIRY] Regular Monthly plan: Expiring trainer access with membership expiry');
 
                         // Update trainer assignment status to expired
                         await supabaseAdmin
@@ -522,7 +525,7 @@ export async function POST(request: NextRequest) {
 
                     if (!updateError) {
                         transitionedToGracePeriod++;
-                        console.log(`[EXPIRY] Transitioned membership ${membership.id} to grace period`);
+                        logger.debug('[EXPIRY] Transitioned membership to grace period');
 
                         // Send notification about trainer access expiration for Regular Monthly plans
                         if (isRegularMonthly && membership.trainer_assigned) {
@@ -561,20 +564,21 @@ export async function POST(request: NextRequest) {
 
                             if (emailResult.success) {
                                 gracePeriodStartEmailsSent++;
-                                console.log(`[EMAIL] Grace period start email sent to user ${membership.user_id} for membership ${membership.id}`);
+                                const { logger } = await import('@/lib/logger');
+                                logger.debug('[EMAIL] Grace period start email sent');
                             } else {
                                 // If email was already sent (idempotency check), that's fine - just log it
                                 if (emailResult.error?.includes('already sent')) {
-                                    console.log(`[EMAIL] Grace period start email already sent for membership ${membership.id}, skipping`);
+                                    logger.debug('[EMAIL] Grace period start email already sent, skipping');
                                 } else {
-                                    console.error(`[EMAIL] Failed to send grace period start email:`, emailResult.error);
+                                    logger.error('[EMAIL] Failed to send grace period start email:', emailResult.error);
                                 }
                             }
                         } else if (membership.grace_period_end) {
-                            console.log(`[EMAIL] Grace period start email skipped for membership ${membership.id} - grace_period_end already exists (${membership.grace_period_end})`);
+                            logger.debug('[EMAIL] Grace period start email skipped - grace_period_end already exists');
                         }
                     } else {
-                        console.error(`[EXPIRY] Error transitioning membership ${membership.id} to grace period:`, updateError);
+                        logger.error('[EXPIRY] Error transitioning membership to grace period:', updateError);
                     }
                 }
             }
@@ -625,9 +629,10 @@ export async function POST(request: NextRequest) {
 
                 if (emailResult.success) {
                     gracePeriodEndEmailsSent++;
-                    console.log(`[EMAIL] Grace period end email sent to user ${membership.user_id} for membership ${membership.id}`);
+                    const { logger } = await import('@/lib/logger');
+                    logger.debug('[EMAIL] Grace period end email sent');
                 } else {
-                    console.error(`[EMAIL] Failed to send grace period end email:`, emailResult.error);
+                    logger.error('[EMAIL] Failed to send grace period end email:', emailResult.error);
                 }
             }
         }
@@ -676,7 +681,7 @@ export async function POST(request: NextRequest) {
 
                 if (!deleteError) {
                     expiredFromGracePeriod++;
-                    console.log(`[EXPIRY] Deleted expired membership ${membership.id} after grace period`);
+                    logger.debug('[EXPIRY] Deleted expired membership after grace period');
 
                     // Send final expiration notification
                     notifications.push({
@@ -687,7 +692,7 @@ export async function POST(request: NextRequest) {
                         is_read: false
                     });
                 } else {
-                    console.error(`[EXPIRY] Error deleting expired membership ${membership.id}:`, deleteError);
+                    logger.error('[EXPIRY] Error deleting expired membership:', deleteError);
                 }
             }
         }
@@ -709,9 +714,9 @@ export async function POST(request: NextRequest) {
 
                     if (!updateError) {
                         updatedExpiredCount++;
-                        console.log(`[EXPIRY] Updated membership ${membership.id} status to expired (legacy)`);
+                        logger.debug('[EXPIRY] Updated membership status to expired (legacy)');
                     } else {
-                        console.error(`[EXPIRY] Error updating membership ${membership.id}:`, updateError);
+                        logger.error('[EXPIRY] Error updating membership:', updateError);
                     }
                 }
 

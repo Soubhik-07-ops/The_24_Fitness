@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createTrainerAssignmentRequest, type TrainerAssignmentConfig } from '@/lib/trainerAssignment'
+import { logger } from '@/lib/logger'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -39,11 +40,12 @@ export async function POST(
 
         const token = authHeader.replace('Bearer ', '')
 
-        // Verify token and get user
-        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
-        if (authError || !user) {
+        // Verify token and get user - also verify user still exists
+        const { validateUserAuth } = await import('@/lib/userAuth');
+        const user = await validateUserAuth(token);
+        if (!user) {
             return NextResponse.json(
-                { error: 'Invalid authentication token' },
+                { error: 'Invalid authentication token or user account has been deleted' },
                 { status: 401 }
             )
         }
@@ -184,12 +186,7 @@ export async function POST(
                 { status: 500 }
             )
         } else {
-            console.log('Membership status updated successfully:', {
-                id: membershipId,
-                oldStatus: membership.status,
-                newStatus: 'pending',
-                isRenewal
-            })
+            logger.debug('Membership status updated successfully')
         }
 
         // Create add-ons if selected
@@ -197,7 +194,7 @@ export async function POST(
             // In-gym admission fee (fetch from database)
             const { getInGymAdmissionFee } = await import('@/lib/adminSettings');
             const inGymPrice = await getInGymAdmissionFee();
-            console.log('Creating in-gym addon with price:', inGymPrice, 'for membership:', membershipId)
+            logger.debug('Creating in-gym addon')
 
             const { data: inGymAddon, error: inGymError } = await supabaseAdmin
                 .from('membership_addons')
@@ -211,10 +208,9 @@ export async function POST(
                 .single()
 
             if (inGymError) {
-                console.error('Error creating in-gym addon:', inGymError)
+                logger.error('Error creating in-gym addon:', inGymError)
             } else {
-                console.log('In-gym addon created successfully:', inGymAddon)
-                console.log('In-gym addon price saved as:', inGymAddon.price, 'Type:', typeof inGymAddon.price)
+                logger.debug('In-gym addon created successfully')
 
                 // Update membership plan_type from 'online' to 'in_gym' when in-gym addon is selected
                 const { error: updatePlanTypeError } = await supabaseAdmin
@@ -223,9 +219,9 @@ export async function POST(
                     .eq('id', membershipId)
 
                 if (updatePlanTypeError) {
-                    console.error('Error updating plan_type to in_gym:', updatePlanTypeError)
+                    logger.error('Error updating plan_type to in_gym:', updatePlanTypeError)
                 } else {
-                    console.log('Membership plan_type updated to in_gym')
+                    logger.debug('Membership plan_type updated to in_gym')
                 }
             }
         }
@@ -233,12 +229,7 @@ export async function POST(
         // Handle trainer assignment logic
         let trainerAssignmentCreated = false
         if (addons?.personalTrainer && addons?.selectedTrainer) {
-            console.log('[SUBMIT PAYMENT] Processing trainer addon for renewal:', {
-                membershipId,
-                isRenewal,
-                trainerId: addons.selectedTrainer,
-                membershipStatus: membership.status
-            })
+            logger.debug('[SUBMIT PAYMENT] Processing trainer addon for renewal')
 
             // Fetch trainer from database using the trainer ID (not hardcoded names)
             // The frontend now sends the actual trainer UUID from database
@@ -250,7 +241,7 @@ export async function POST(
                 .single()
 
             if (trainerError || !trainerData) {
-                console.error('[SUBMIT PAYMENT] Error fetching trainer:', trainerError)
+                logger.error('[SUBMIT PAYMENT] Error fetching trainer:', trainerError)
                 return NextResponse.json(
                     { error: 'Invalid or inactive trainer selected' },
                     { status: 400 }
@@ -260,15 +251,8 @@ export async function POST(
             // Use price from database, not hardcoded
             const trainerPrice = parseFloat(trainerData.price) || 0
             if (trainerPrice === 0) {
-                console.warn(`[SUBMIT PAYMENT] Trainer ${trainerData.name} (ID: ${trainerData.id}) has no price in database`)
+                logger.warn('[SUBMIT PAYMENT] Trainer has no price in database')
             }
-
-            console.log('[SUBMIT PAYMENT] Trainer details:', {
-                trainerId: trainerData.id,
-                trainerName: trainerData.name,
-                trainerPrice,
-                isRenewal
-            })
 
             // Create trainer addon record
             const { data: trainerAddon, error: trainerAddonError } = await supabaseAdmin
@@ -284,16 +268,9 @@ export async function POST(
                 .single()
 
             if (trainerAddonError) {
-                console.error('[SUBMIT PAYMENT] Error creating personal trainer addon:', trainerAddonError)
+                logger.error('[SUBMIT PAYMENT] Error creating personal trainer addon:', trainerAddonError)
             } else {
-                console.log('[SUBMIT PAYMENT] Personal trainer addon created successfully:', {
-                    addonId: trainerAddon.id,
-                    membershipId,
-                    trainerId: trainerData.id,
-                    price: trainerPrice,
-                    status: trainerAddon.status,
-                    isRenewal
-                })
+                logger.debug('[SUBMIT PAYMENT] Personal trainer addon created successfully')
 
                 // Create trainer assignment request
                 // Note: We'll use a future date for membership start (when admin approves)
@@ -318,23 +295,17 @@ export async function POST(
 
                 if (assignmentResult.success) {
                     trainerAssignmentCreated = true
-                    console.log('[SUBMIT PAYMENT] Trainer assignment request created:', {
-                        assignmentId: assignmentResult.assignmentId,
-                        membershipId,
-                        trainerId: trainerData.id,
-                        isRenewal
-                    })
+                    logger.debug('[SUBMIT PAYMENT] Trainer assignment request created')
                 } else {
-                    console.error('[SUBMIT PAYMENT] Error creating trainer assignment request:', assignmentResult.error)
+                    logger.error('[SUBMIT PAYMENT] Error creating trainer assignment request:', assignmentResult.error)
                 }
             }
         } else {
-            console.log('[SUBMIT PAYMENT] No trainer addon selected:', {
-                membershipId,
+            logger.debug('[SUBMIT PAYMENT] No trainer addon selected', {
                 hasPersonalTrainer: addons?.personalTrainer,
                 hasSelectedTrainer: Boolean(addons?.selectedTrainer),
                 isRenewal
-            })
+            });
         }
 
         // For Premium and Elite plans, check if they include trainer (even without addon)
@@ -391,7 +362,7 @@ export async function POST(
             membership: updatedMembership || membership
         })
     } catch (error: any) {
-        console.error('Error in submit-payment route:', error)
+        logger.error('Error in submit-payment route:', error)
         return NextResponse.json(
             { error: error.message || 'Internal server error' },
             { status: 500 }

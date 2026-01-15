@@ -11,6 +11,7 @@ import StarRating from '@/components/Reviews/StarRating'
 import { useRouter } from 'next/navigation'
 import Toast from '@/components/Toast/Toast'
 import { useToast } from '@/hooks/useToast'
+import { logger } from '@/lib/logger'
 import styles from './Testimonials.module.css'
 
 interface Profile {
@@ -60,15 +61,11 @@ export default function Testimonials() {
     useEffect(() => {
         const fetchTestimonialData = async () => {
             try {
-                console.log('🔄 Starting to fetch testimonial data...')
-
                 // Fetch all classes first (for displaying class names if review has class_id)
                 const { data: classesData, error: classesError } = await supabase
                     .from('classes')
                     .select('id, name')
                     .order('name', { ascending: true })
-
-                console.log('📚 Classes data:', classesData)
 
                 if (classesError) throw classesError
 
@@ -84,8 +81,6 @@ export default function Testimonials() {
                     .eq('is_approved', true)
                     .order('created_at', { ascending: false })
 
-                console.log('📊 Reviews data:', reviewsData)
-
                 if (reviewsError) throw reviewsError
 
                 let reviewsWithUserData: Review[] = []
@@ -98,8 +93,6 @@ export default function Testimonials() {
                         .filter(userId => userId !== null)
                     )]
 
-                    console.log('👤 User IDs to fetch:', userIds)
-
                     let profilesData: Profile[] = []
                     if (userIds.length > 0) {
                         const { data: profiles, error: profilesError } = await supabase
@@ -108,13 +101,12 @@ export default function Testimonials() {
                             .in('id', userIds)
 
                         if (profilesError) {
-                            console.error('❌ Profiles fetch error:', profilesError)
+                            logger.error('Profiles fetch error:', profilesError)
                         } else {
                             profilesData = profiles || []
                         }
                     }
 
-                    console.log('👤 Profiles data found:', profilesData)
 
                     // Combine reviews with profiles and class names (only if class_id exists)
                     reviewsWithUserData = reviewsData.map((review): Review => {
@@ -149,8 +141,6 @@ export default function Testimonials() {
                     .select('rating, user_id')
                     .eq('is_approved', true)
 
-                console.log('📈 Stats query result:', statsData)
-
                 if (statsError) throw statsError
 
                 // Calculate statistics
@@ -166,17 +156,10 @@ export default function Testimonials() {
                     .eq('status', 'active')
 
                 if (membersError) {
-                    console.warn('⚠️ Error fetching active members:', membersError)
+                    logger.warn('Error fetching active members:', membersError)
                 }
 
                 const totalMembers = activeMembersCount || 0
-
-                console.log('✅ Final stats:', {
-                    reviewsCount: reviewsWithUserData.length,
-                    averageRating,
-                    totalReviews,
-                    totalMembers
-                })
 
                 setReviews(reviewsWithUserData)
                 setStats({
@@ -186,7 +169,7 @@ export default function Testimonials() {
                 })
 
             } catch (error: any) {
-                console.error('🚨 Error fetching testimonial data:', error)
+                logger.error('Error fetching testimonial data:', error)
             } finally {
                 setLoading(false)
             }
@@ -217,7 +200,7 @@ export default function Testimonials() {
                 table: 'memberships',
                 filter: 'status=eq.active'
             }, () => {
-                console.log('🔄 Active memberships changed, refetching stats...')
+                logger.debug('Active memberships changed, refetching stats...')
                 fetchTestimonialData()
             })
             .subscribe()
@@ -380,7 +363,7 @@ export default function Testimonials() {
             // No need to reload - it will show once approved
 
         } catch (error: any) {
-            console.error('Error submitting review:', error)
+            logger.error('Error submitting review:', error)
             showToast('Failed to submit review: ' + error.message, 'error')
         } finally {
             setSubmittingReview(false)
