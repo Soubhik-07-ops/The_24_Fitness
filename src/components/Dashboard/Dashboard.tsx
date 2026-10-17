@@ -8,7 +8,7 @@ import { type User as SupabaseUser } from '@supabase/supabase-js';
 import { logger } from '@/lib/logger';
 import styles from './Dashboard.module.css';
 import { Edit3, User, Wifi, WifiOff, Calendar, FileText, CheckCircle, Clock, XCircle, MessageSquare, Download, ArrowRight, TrendingUp, CreditCard, Award, Activity, Bell, Target, Eye, X, ChevronRight, Receipt } from 'lucide-react';
-import { getMembershipExpirationStatus as getMembershipExpirationStatusUtil, getTrainerPeriodExpirationStatus as getTrainerPeriodExpirationStatusUtil } from '@/lib/membershipUtils';
+import { getMembershipExpirationStatus as getMembershipExpirationStatusUtil, getTrainerPeriodExpirationStatus as getTrainerPeriodExpirationStatusUtil, getEffectiveMembershipStatus } from '@/lib/membershipUtils';
 import { isInGracePeriod, getGracePeriodDaysRemaining } from '@/lib/gracePeriod';
 import { isTrainerInGracePeriod, getTrainerGracePeriodDaysRemaining } from '@/lib/trainerGracePeriod';
 import { checkTrainerMessagingAccess } from '@/lib/trainerMessagingAccess';
@@ -763,6 +763,10 @@ export default function Dashboard() {
                 return { icon: CheckCircle, text: 'Approved', className: styles.statusApproved };
             case 'pending':
                 return { icon: Clock, text: 'Pending Approval', className: styles.statusPending };
+            case 'grace_period':
+                return { icon: Clock, text: 'Grace Period', className: styles.statusPending };
+            case 'expired':
+                return { icon: XCircle, text: 'Expired', className: styles.statusRejected };
             case 'rejected':
                 return { icon: XCircle, text: 'Rejected', className: styles.statusRejected };
             default:
@@ -772,7 +776,7 @@ export default function Dashboard() {
 
     // Calculate dashboard stats
     const dashboardStats = useMemo(() => {
-        const activeMemberships = allMemberships.filter(m => m.status === 'active');
+        const activeMemberships = allMemberships.filter(m => getEffectiveMembershipStatus(m) === 'active');
         const expirationStatus = membership ? getMembershipExpirationStatus(membership) : null;
         const trainerExpiration = membership && membership.trainer_assigned ? getTrainerPeriodExpirationStatus(membership) : null;
         const totalPaid = membershipHistory?.financialSummary?.totalPaid || 0;
@@ -795,8 +799,8 @@ export default function Dashboard() {
 
     // Group charts by membership and organize by current/previous plans
     const organizedCharts = useMemo(() => {
-        const activeMemberships = allMemberships.filter(m => m.status === 'active');
-        const previousMemberships = allMemberships.filter(m => m.status !== 'active');
+        const activeMemberships = allMemberships.filter(m => getEffectiveMembershipStatus(m) === 'active');
+        const previousMemberships = allMemberships.filter(m => getEffectiveMembershipStatus(m) !== 'active');
 
         // Group charts by membership_id
         const chartsByMembership = new Map<number, WeeklyChart[]>();
@@ -866,13 +870,14 @@ export default function Dashboard() {
         );
     }
 
-    const statusBadge = membership ? getStatusBadge(membership.status) : null;
+    const effectiveStatus = membership ? getEffectiveMembershipStatus(membership) : '';
+    const statusBadge = membership ? getStatusBadge(effectiveStatus) : null;
     const StatusIcon = statusBadge?.icon || Clock;
 
     // Charts eligibility: Regular plans need trainer addon, other plans always eligible
-    const hasActiveMembership = allMemberships.some(m => m.status === 'active');
+    const hasActiveMembership = allMemberships.some(m => getEffectiveMembershipStatus(m) === 'active');
     const hasChartEligibleActiveMembership = allMemberships
-        .filter(m => m.status === 'active')
+        .filter(m => getEffectiveMembershipStatus(m) === 'active')
         .some((m: any) => {
             const planLower = String(m.plan_name || '').toLowerCase();
             const isRegularPlan = planLower.includes('regular');
@@ -1387,7 +1392,7 @@ export default function Dashboard() {
                                     <p className={styles.emptySubtext}>
                                         {allMemberships.some((m: any) => {
                                             const planLower = String(m.plan_name || '').toLowerCase();
-                                            return planLower.includes('regular') && m.status === 'active';
+                                            return planLower.includes('regular') && getEffectiveMembershipStatus(m) === 'active';
                                         }) ? (
                                             <>Regular plans require a trainer addon to receive workout and diet charts. Add a trainer to your membership to get weekly charts.</>
                                         ) : (
@@ -1401,7 +1406,7 @@ export default function Dashboard() {
                                 <>
                                     {/* Missing Chart Reminders */}
                                     {allMemberships
-                                        .filter((m: any) => m.status === 'active' && !String(m.plan_name || '').toLowerCase().includes('regular'))
+                                        .filter((m: any) => getEffectiveMembershipStatus(m) === 'active' && !String(m.plan_name || '').toLowerCase().includes('regular'))
                                         .map((membership) => {
                                             const nextWeekInfo = getNextWeekNeedingChart(membership);
                                             if (!nextWeekInfo) return null;

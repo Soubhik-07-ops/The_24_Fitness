@@ -109,3 +109,53 @@ export function getMembershipEndDate(membership: {
     return membership.membership_end_date || membership.end_date || null;
 }
 
+/**
+ * Resolves the true effective status of a membership by taking its database status
+ * and dynamically evaluating its expiration date and grace period.
+ * Avoids displaying "Active" for memberships whose end_date has already passed.
+ */
+export function getEffectiveMembershipStatus(
+    membership: {
+        status?: string | null;
+        membership_end_date?: string | null;
+        end_date?: string | null;
+        grace_period_end?: string | null;
+    } | null | undefined,
+    currentDate?: Date | string | null
+): string {
+    if (!membership) return '';
+    const rawStatus = (membership.status || '').toLowerCase();
+
+    // Inactive statuses that don't need expiration checks
+    if (rawStatus === 'rejected') return 'rejected';
+    if (rawStatus === 'pending') return 'pending';
+
+    const endDateStr = membership.membership_end_date || membership.end_date;
+    if (endDateStr) {
+        const now = currentDate
+            ? (typeof currentDate === 'string' ? new Date(currentDate) : currentDate)
+            : new Date();
+        const end = new Date(endDateStr);
+
+        // Check if calendar end date has passed
+        if (end <= now) {
+            // Check if in grace period
+            const gracePeriodEnd = membership.grace_period_end
+                ? new Date(membership.grace_period_end)
+                : null;
+            if (gracePeriodEnd && gracePeriodEnd >= now) {
+                return 'grace_period';
+            }
+            // Fallback grace period (15 days from end date)
+            const fallbackGrace = new Date(end);
+            fallbackGrace.setDate(fallbackGrace.getDate() + 15);
+            if (rawStatus === 'grace_period' && now <= fallbackGrace) {
+                return 'grace_period';
+            }
+            return 'expired';
+        }
+    }
+
+    return rawStatus;
+}
+

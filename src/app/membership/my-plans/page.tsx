@@ -7,7 +7,7 @@ import Navbar from '@/components/Navbar/Navbar'
 import Footer from '@/components/Footer/Footer'
 import { ArrowLeft, CheckCircle, Clock, XCircle, Calendar, CreditCard } from 'lucide-react'
 import styles from './my-plans.module.css'
-import { getMembershipExpirationStatus as getMembershipExpirationStatusUtil } from '@/lib/membershipUtils'
+import { getMembershipExpirationStatus as getMembershipExpirationStatusUtil, getEffectiveMembershipStatus } from '@/lib/membershipUtils'
 
 interface MembershipAddon {
     id: number
@@ -113,6 +113,8 @@ export default function MyMembershipsPage() {
                 return { icon: CheckCircle, text: 'Approved', className: styles.statusApproved }
             case 'pending':
                 return { icon: Clock, text: 'Pending Approval', className: styles.statusPending }
+            case 'grace_period':
+                return { icon: Clock, text: 'Grace Period', className: styles.statusPending }
             case 'rejected':
                 return { icon: XCircle, text: 'Rejected', className: styles.statusRejected }
             case 'expired':
@@ -175,7 +177,8 @@ export default function MyMembershipsPage() {
                 ) : (
                     <div className={styles.membershipsGrid}>
                         {memberships.map((membership) => {
-                            const statusBadge = getStatusBadge(membership.status)
+                            const effectiveStatus = getEffectiveMembershipStatus(membership)
+                            const statusBadge = getStatusBadge(effectiveStatus)
                             const StatusIcon = statusBadge.icon
 
                             const expirationStatus = getMembershipExpirationStatus(membership);
@@ -183,7 +186,7 @@ export default function MyMembershipsPage() {
                             return (
                                 <div key={membership.id} className={styles.membershipCard}>
                                     {/* Membership Expiration Warning */}
-                                    {membership.status === 'active' && (expirationStatus.isExpired || expirationStatus.isExpiringSoon) && (
+                                    {(membership.status === 'active' || effectiveStatus === 'expired') && (expirationStatus.isExpired || expirationStatus.isExpiringSoon) && (
                                         <div style={{
                                             marginBottom: '1rem',
                                             padding: '0.75rem 1rem',

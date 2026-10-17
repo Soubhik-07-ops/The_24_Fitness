@@ -52,12 +52,19 @@ async function hasEmailBeenSent(
     eventType: EmailEventType
 ): Promise<boolean> {
     try {
-        const { data, error } = await supabaseAdmin
+        let query = supabaseAdmin
             .from('email_events')
             .select('id')
             .eq('user_id', userId)
-            .eq('event_type', eventType)
-            .eq('membership_id', membershipId || 0)
+            .eq('event_type', eventType);
+
+        if (membershipId !== null && membershipId !== undefined) {
+            query = query.eq('membership_id', membershipId);
+        } else {
+            query = query.is('membership_id', null);
+        }
+
+        const { data, error } = await query
             .limit(1)
             .maybeSingle();
 
