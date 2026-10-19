@@ -1046,7 +1046,7 @@ export default function Dashboard() {
                                                 <div>
                                                     <div className={styles.alertTitle} style={{ color: '#dc2626' }}>Membership Expired</div>
                                                     <div className={styles.alertText}>
-                                                        Your membership expired {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''} ago. <a href={renewalLink} style={{ marginLeft: '0.5rem', fontWeight: 600, textDecoration: 'underline' }}>Click here to renew</a>.
+                                                        Your membership expired {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''} ago. <a href={renewalLink} style={{ fontWeight: 600, textDecoration: 'underline' }}>Click here</a> to renew.
                                                     </div>
                                                 </div>
                                             </div>

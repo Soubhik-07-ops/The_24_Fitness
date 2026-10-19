@@ -145,7 +145,7 @@ export async function POST(
             .eq('id', user.id)
             .maybeSingle();
 
-        const genderStr = (userProfile?.gender || '').toLowerCase();
+        const genderStr = (body.gender || newPlan?.gender || userProfile?.gender || '').toLowerCase();
         const isFemale = genderStr === 'female' || genderStr === 'girls' || genderStr === 'girl' || genderStr === 'f';
 
         // 2. Fetch authoritative fee settings from admin_settings
@@ -165,26 +165,37 @@ export async function POST(
         const authoritativeMonthlyFee = settingsMap['in_gym_monthly_fee'] || settingsMap['monthly_fee'] || 650;
         const authoritativeFemaleFee = settingsMap['in_gym_female_fee'] || 700;
 
-        // 3. Determine target plan and duration
-        const targetPlanName = (newPlan?.planName || membership.plan_name || '').toLowerCase();
-        const targetPlanType = (newPlan?.planType || membership.plan_type || 'in_gym').toLowerCase();
-        let targetDuration = Number(newPlan?.durationMonths) || Number(membership.duration_months) || 1;
-        if (targetPlanName.includes('regular') || targetPlanName.includes('monthly')) targetDuration = 1;
-        else if (targetPlanName.includes('basic')) targetDuration = 3;
-        else if (targetPlanName.includes('premium')) targetDuration = 6;
-        else if (targetPlanName.includes('elite')) targetDuration = 12;
+        // 3. Determine target plan and duration dynamically from newPlan or body
+        const targetPlanCode = (newPlan?.code || newPlan?.planCode || body.planCode || '').toUpperCase();
+        const targetPlanName = (
+            newPlan?.planName ||
+            newPlan?.name ||
+            newPlan?.title ||
+            (typeof newPlan === 'string' ? newPlan : '') ||
+            body.planName ||
+            body.plan ||
+            membership.plan_name ||
+            ''
+        ).toLowerCase();
+        const targetPlanType = (newPlan?.planType || body.planType || membership.plan_type || 'in_gym').toLowerCase();
+
+        let targetDuration = Number(newPlan?.durationMonths) || Number(body.durationMonths) || Number(membership.duration_months) || 1;
+        if (targetPlanCode === 'ELITE' || targetPlanName.includes('elite')) targetDuration = 12;
+        else if (targetPlanCode === 'PREMIUM' || targetPlanName.includes('premium')) targetDuration = 6;
+        else if (targetPlanCode === 'BASIC' || targetPlanName.includes('basic')) targetDuration = 3;
+        else if (targetPlanCode === 'REGULAR_MONTHLY' || targetPlanName.includes('regular') || targetPlanName.includes('monthly')) targetDuration = 1;
 
         // 4. Calculate authoritative base plan price
         let authoritativeBasePrice = 0;
         let isRegularMonthly = false;
 
-        if (targetPlanName.includes('elite')) {
+        if (targetPlanCode === 'ELITE' || targetPlanName.includes('elite')) {
             authoritativeBasePrice = isFemale ? 7800 : 6800;
-        } else if (targetPlanName.includes('premium')) {
+        } else if (targetPlanCode === 'PREMIUM' || targetPlanName.includes('premium')) {
             authoritativeBasePrice = isFemale ? 4400 : 4000;
-        } else if (targetPlanName.includes('basic')) {
+        } else if (targetPlanCode === 'BASIC' || targetPlanName.includes('basic')) {
             authoritativeBasePrice = isFemale ? 2400 : 2200;
-        } else if (targetPlanName.includes('regular') || targetPlanName.includes('monthly') || targetPlanType === 'in_gym') {
+        } else if (targetPlanCode === 'REGULAR_MONTHLY' || targetPlanName.includes('regular') || targetPlanName.includes('monthly') || targetPlanType === 'in_gym') {
             isRegularMonthly = true;
             if (isRenewal) {
                 // Renewal of Regular Monthly: admission fee waived (male ₹650 / female ₹700)
