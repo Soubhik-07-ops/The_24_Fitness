@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import MembershipPlans from '@/components/MembershipPlans/MembershipPlans'
 import CTASection from '@/components/CTASection/CTASection'
 import { Metadata } from 'next'
@@ -14,7 +15,9 @@ export default function MembershipPage() {
         <>
             <Navbar />
             <main style={{ paddingTop: '4.5rem' }}>
-                <MembershipPlans />
+                <Suspense fallback={<div style={{ minHeight: '600px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading plans...</div>}>
+                    <MembershipPlans />
+                </Suspense>
                 <CTASection />
             </main>
             <Footer />

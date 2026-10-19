@@ -33,11 +33,11 @@ interface Membership {
     created_at: string
     membership_start_date?: string | null
     addons?: MembershipAddon[]
+    form_data?: any
 }
 
 export default function MyMembershipsPage() {
     const [memberships, setMemberships] = useState<Membership[]>([])
-    const [inGymAdmissionFee, setInGymAdmissionFee] = useState(1200)
     const [loading, setLoading] = useState(true)
     const router = useRouter()
 
@@ -90,20 +90,8 @@ export default function MyMembershipsPage() {
         }
 
         fetchMemberships()
-        fetchInGymFees()
     }, [router])
 
-    const fetchInGymFees = async () => {
-        try {
-            const response = await fetch('/api/fees')
-            const data = await response.json()
-            if (data.success && data.fees) {
-                setInGymAdmissionFee(data.fees.admissionFee || 1200)
-            }
-        } catch (error) {
-            console.error('Error fetching in-gym admission fee:', error)
-        }
-    }
 
     const getStatusBadge = (status: string) => {
         switch (status) {
@@ -186,37 +174,63 @@ export default function MyMembershipsPage() {
                             return (
                                 <div key={membership.id} className={styles.membershipCard}>
                                     {/* Membership Expiration Warning */}
-                                    {(membership.status === 'active' || effectiveStatus === 'expired') && (expirationStatus.isExpired || expirationStatus.isExpiringSoon) && (
-                                        <div style={{
-                                            marginBottom: '1rem',
-                                            padding: '0.75rem 1rem',
-                                            background: expirationStatus.isExpired ? '#fee2e2' : '#fef3c7',
-                                            border: `1px solid ${expirationStatus.isExpired ? '#dc2626' : '#f59e0b'}`,
-                                            borderRadius: '0.5rem',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '0.75rem'
-                                        }}>
-                                            <div style={{ color: expirationStatus.isExpired ? '#dc2626' : '#f59e0b' }}>
-                                                {expirationStatus.isExpired ? <XCircle size={20} /> : <Clock size={20} />}
-                                            </div>
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{
-                                                    fontWeight: '600',
-                                                    color: expirationStatus.isExpired ? '#dc2626' : '#f59e0b',
-                                                    marginBottom: '0.25rem',
-                                                    fontSize: '0.875rem'
-                                                }}>
-                                                    {expirationStatus.isExpired ? 'Plan Expired' : 'Plan Expiring Soon'}
+                                    {(membership.status === 'active' || effectiveStatus === 'expired') && (expirationStatus.isExpired || expirationStatus.isExpiringSoon) && (() => {
+                                        const isGirl = membership.form_data?.gender === 'female' ||
+                                            (membership.plan_name || '').toLowerCase().includes('girl') ||
+                                            [700, 1400, 2400, 4400, 7800].includes(membership.price)
+                                        const renewalGender = isGirl ? 'girls' : 'boys'
+                                        const renewUrl = `/membership/payment?membershipId=${membership.id}&renewalType=membership&gender=${renewalGender}`
+                                        return (
+                                            <div style={{
+                                                marginBottom: '1rem',
+                                                padding: '0.75rem 1rem',
+                                                background: expirationStatus.isExpired ? '#fee2e2' : '#fef3c7',
+                                                border: `1px solid ${expirationStatus.isExpired ? '#dc2626' : '#f59e0b'}`,
+                                                borderRadius: '0.5rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                flexWrap: 'wrap',
+                                                gap: '0.75rem'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: '220px' }}>
+                                                    <div style={{ color: expirationStatus.isExpired ? '#dc2626' : '#f59e0b' }}>
+                                                        {expirationStatus.isExpired ? <XCircle size={20} /> : <Clock size={20} />}
+                                                    </div>
+                                                    <div>
+                                                        <div style={{
+                                                            fontWeight: '600',
+                                                            color: expirationStatus.isExpired ? '#dc2626' : '#f59e0b',
+                                                            marginBottom: '0.25rem',
+                                                            fontSize: '0.875rem'
+                                                        }}>
+                                                            {expirationStatus.isExpired ? 'Plan Expired' : 'Plan Expiring Soon'}
+                                                        </div>
+                                                        <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
+                                                            {expirationStatus.isExpired
+                                                                ? `Your plan expired ${expirationStatus.daysRemaining} day${expirationStatus.daysRemaining !== 1 ? 's' : ''} ago. Kindly renew it.`
+                                                                : `Your plan is getting expire soon. It will expire in ${expirationStatus.daysRemaining} day${expirationStatus.daysRemaining !== 1 ? 's' : ''}. Kindly renew it.`}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
-                                                    {expirationStatus.isExpired
-                                                        ? `Your plan expired ${expirationStatus.daysRemaining} day${expirationStatus.daysRemaining !== 1 ? 's' : ''} ago. Kindly renew it.`
-                                                        : `Your plan is getting expire soon. It will expire in ${expirationStatus.daysRemaining} day${expirationStatus.daysRemaining !== 1 ? 's' : ''}. Kindly renew it.`}
-                                                </div>
+                                                <a
+                                                    href={renewUrl}
+                                                    style={{
+                                                        padding: '0.45rem 1rem',
+                                                        background: expirationStatus.isExpired ? '#dc2626' : '#ea580c',
+                                                        color: '#ffffff',
+                                                        borderRadius: '0.375rem',
+                                                        fontWeight: 700,
+                                                        fontSize: '0.8125rem',
+                                                        textDecoration: 'none',
+                                                        whiteSpace: 'nowrap'
+                                                    }}
+                                                >
+                                                    Renew Plan
+                                                </a>
                                             </div>
-                                        </div>
-                                    )}
+                                        )
+                                    })()}
 
                                     <div className={styles.cardHeader}>
                                         <div>
@@ -250,13 +264,7 @@ export default function MyMembershipsPage() {
                                             <span className={styles.detailValue}>₹{membership.price.toLocaleString()}</span>
                                         </div>
 
-                                        {/* Check if plan is in-gym type (selected directly from memberships page) */}
-                                        {membership.plan_type === 'in_gym' && !membership.addons?.some((a: any) => a.addon_type === 'in_gym') && (
-                                            <div className={styles.detailRow}>
-                                                <span className={styles.detailLabel}>In-Gym Admission Fee:</span>
-                                                <span className={styles.detailValue}>₹1,200</span>
-                                            </div>
-                                        )}
+
 
                                         {membership.addons && membership.addons.length > 0 && (
                                             <>
@@ -267,10 +275,11 @@ export default function MyMembershipsPage() {
                                                             const addonPrice = typeof addon.price === 'number' ? addon.price : parseFloat(addon.price) || 0
                                                             return (
                                                                 <div key={addon.id} style={{ marginBottom: '4px' }}>
-                                                                    {addon.addon_type === 'in_gym' ? 'In-Gym Access' :
-                                                                        addon.addon_type === 'personal_trainer' ?
+                                                                    {addon.addon_type === 'in_gym' ? 'In-Gym Access' : (
+                                                                        `${addon.addon_type === 'personal_trainer' ?
                                                                             `Personal Trainer${addon.trainers ? ` (${Array.isArray(addon.trainers) ? addon.trainers[0]?.name : addon.trainers.name})` : ''}` :
-                                                                            addon.addon_type} - ₹{addonPrice.toLocaleString()}
+                                                                            addon.addon_type} - ₹${addonPrice.toLocaleString()}`
+                                                                    )}
                                                                 </div>
                                                             )
                                                         })}
@@ -284,15 +293,8 @@ export default function MyMembershipsPage() {
                                             <span className={styles.detailValue} style={{ fontWeight: 'bold', color: '#22c55e' }}>
                                                 ₹{(() => {
                                                     let total = membership.price
-                                                    // Add in-gym admission fee if plan_type is in_gym and no active in_gym addon exists
-                                                    // EXCEPT for Regular Plans (plan_name contains "regular") - they already include admission in base price
-                                                    const activeAddons = membership.addons?.filter((a: any) => a.status === 'active') || []
-                                                    const planName = String(membership.plan_name || '').toLowerCase()
-                                                    const isRegularPlan = planName.includes('regular')
-                                                    if (membership.plan_type === 'in_gym' && !activeAddons.some((a: any) => a.addon_type === 'in_gym') && !isRegularPlan) {
-                                                        total += inGymAdmissionFee
-                                                    }
                                                     // Add only active addon prices
+                                                    const activeAddons = membership.addons?.filter((a: any) => a.status === 'active') || []
                                                     if (activeAddons.length > 0) {
                                                         total += activeAddons.reduce((sum: number, a: any) => {
                                                             const addonPrice = typeof a.price === 'number' ? a.price : parseFloat(a.price) || 0

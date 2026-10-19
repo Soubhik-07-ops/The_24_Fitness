@@ -26,6 +26,9 @@ export default function SettingsPage() {
     const [qrCodeFile, setQrCodeFile] = useState<File | null>(null);
     const [qrCodePreview, setQrCodePreview] = useState<string>('');
     const [uploadingQr, setUploadingQr] = useState(false);
+    const [upiId, setUpiId] = useState<string>('');
+    const [upiMerchantName, setUpiMerchantName] = useState<string>('');
+    const [upiQrNotice, setUpiQrNotice] = useState<string>('');
 
     // General Settings - Load from database only
     const [gymName, setGymName] = useState<string>('');
@@ -71,6 +74,9 @@ export default function SettingsPage() {
                 // Payment Settings
                 setPaymentQrCode(getSettingValue(settings, 'payment_qr_code_url'));
                 setQrCodePreview(getSettingValue(settings, 'payment_qr_code_url'));
+                setUpiId(getSettingValue(settings, 'upi_id') || '');
+                setUpiMerchantName(getSettingValue(settings, 'upi_merchant_name') || '');
+                setUpiQrNotice(getSettingValue(settings, 'upi_qr_notice') || '');
 
                 // General Settings - Load from database, but if empty, fetch from public API to show current values
                 let gymNameValue = getSettingValue(settings, 'gym_name');
@@ -196,8 +202,13 @@ export default function SettingsPage() {
                 finalQrCodeUrl = uploadedUrl;
             }
 
-            // Save payment settings
-            await saveSetting('payment_qr_code_url', finalQrCodeUrl);
+            // Save payment settings (QR, UPI ID, Merchant Name, Instructions)
+            await Promise.all([
+                saveSetting('payment_qr_code_url', finalQrCodeUrl),
+                saveSetting('upi_id', upiId.trim()),
+                saveSetting('upi_merchant_name', upiMerchantName.trim()),
+                saveSetting('upi_qr_notice', upiQrNotice.trim())
+            ]);
 
             setPaymentQrCode(finalQrCodeUrl);
             setQrCodeFile(null);
@@ -346,7 +357,55 @@ export default function SettingsPage() {
                             </label>
                         </div>
 
-                        <div style={{ marginTop: '9rem' }}>
+                        <div className={styles.formGroup} style={{ marginTop: '1.5rem' }}>
+                            <label htmlFor="upiId">
+                                <CreditCard size={18} />
+                                Official UPI ID / VPA *
+                            </label>
+                            <input
+                                type="text"
+                                id="upiId"
+                                value={upiId}
+                                onChange={(e) => setUpiId(e.target.value)}
+                                placeholder="e.g. the24fitness@icici"
+                                className={styles.input}
+                            />
+                            <small style={{ color: '#6b7280', fontSize: '0.8rem', marginTop: '2px' }}>
+                                This UPI ID is displayed dynamically on website and mobile app payment screens.
+                            </small>
+                        </div>
+
+                        <div className={styles.formGroup}>
+                            <label htmlFor="upiMerchantName">
+                                <Building2 size={18} />
+                                UPI Merchant / Display Name
+                            </label>
+                            <input
+                                type="text"
+                                id="upiMerchantName"
+                                value={upiMerchantName}
+                                onChange={(e) => setUpiMerchantName(e.target.value)}
+                                placeholder="e.g. THE 24 FITNESS GYM"
+                                className={styles.input}
+                            />
+                        </div>
+
+                        <div className={styles.formGroup}>
+                            <label htmlFor="upiQrNotice">
+                                <Clock size={18} />
+                                Payment Instructions / Notice
+                            </label>
+                            <textarea
+                                id="upiQrNotice"
+                                value={upiQrNotice}
+                                onChange={(e) => setUpiQrNotice(e.target.value)}
+                                placeholder="Instructions shown under QR code on payment and renewal screens"
+                                className={styles.textarea}
+                                rows={3}
+                            />
+                        </div>
+
+                        <div style={{ marginTop: '1.5rem' }}>
                             <button
                                 type="button"
                                 onClick={handleSavePayment}
@@ -361,7 +420,7 @@ export default function SettingsPage() {
                                 ) : (
                                     <>
                                         <Save size={18} />
-                                        Save Settings
+                                        Save Payment Settings
                                     </>
                                 )}
                             </button>

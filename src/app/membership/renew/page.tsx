@@ -90,81 +90,35 @@ function RenewMembershipContent() {
 
                 setMembership(membershipData)
 
-                // Calculate renewal price based on plan type and gender
-                const planName = membershipData.plan_name?.toLowerCase() || ''
-                const planType = membershipData.plan_type?.toLowerCase() || ''
-                // Check if it's a regular monthly plan (either by name or plan_type)
-                const isRegularMonthly = (planName.includes('regular') && planName.includes('monthly')) || 
-                                        planType === 'in_gym' || 
-                                        planName === 'regular monthly'
-                
-                console.log('[RENEWAL] Plan name:', planName, 'Plan type:', planType, 'Is regular monthly:', isRegularMonthly)
-                
-                if (isRegularMonthly) {
-                    // For regular monthly plans, determine renewal price based on gender
-                    // Try multiple methods to determine gender:
-                    // 1. Check plan name for "boys" or "girls"
-                    // 2. Check user profile gender field
-                    // 3. Default to boys price (650) if cannot determine
-                    
-                    let determinedGender: string | null = null
-                    
-                    // Method 1: Check plan name
-                    if (planName.includes('boys') || planName.includes('boy')) {
-                        determinedGender = 'boys'
-                    } else if (planName.includes('girls') || planName.includes('girl')) {
-                        determinedGender = 'girls'
-                    }
-                    
-                    // Method 2: Check user profile if plan name doesn't have gender
-                    if (!determinedGender) {
-                        try {
-                            const { data: { user } } = await supabase.auth.getUser()
-                            if (user) {
-                                const { data: profile, error: profileError } = await supabase
-                                    .from('profiles')
-                                    .select('gender')
-                                    .eq('id', user.id)
-                                    .single()
-
-                                console.log('[RENEWAL] Profile data:', profile, 'Error:', profileError)
-                                
-                                if (profile?.gender) {
-                                    determinedGender = profile.gender.toLowerCase()
-                                }
-                            }
-                        } catch (error) {
-                            console.error('[RENEWAL] Error fetching user gender:', error)
-                        }
-                    }
-                    
-                    console.log('[RENEWAL] Determined gender:', determinedGender)
-                    
-                    // Set renewal price based on gender
-                    if (determinedGender === 'boys' || determinedGender === 'male' || determinedGender === 'm') {
-                        console.log('[RENEWAL] Setting price to 650 (boys)')
-                        setRenewalPrice(650) // Boys renewal price
-                    } else if (determinedGender === 'girls' || determinedGender === 'female' || determinedGender === 'f') {
-                        console.log('[RENEWAL] Setting price to 700 (girls)')
-                        setRenewalPrice(700) // Girls renewal price
-                    } else {
-                        // Fallback: If original price is 1200, assume boys (650), if 1400, assume girls (700)
-                        if (membershipData.price === 1200) {
-                            console.log('[RENEWAL] Price is 1200, assuming boys plan, setting to 650')
-                            setRenewalPrice(650)
-                        } else if (membershipData.price === 1400) {
-                            console.log('[RENEWAL] Price is 1400, assuming girls plan, setting to 700')
-                            setRenewalPrice(700)
-                        } else {
-                            console.log('[RENEWAL] Cannot determine gender, using original price:', membershipData.price)
-                            setRenewalPrice(membershipData.price)
-                        }
-                    }
-                } else {
-                    // For non-regular plans, use original price
-                    console.log('[RENEWAL] Not a regular monthly plan, using original price:', membershipData.price)
-                    setRenewalPrice(membershipData.price)
+                // Determine gender accurately
+                let determinedGender: 'boys' | 'girls' = 'boys'
+                const formDataGender = (membershipData.form_data?.gender || '').toLowerCase()
+                const planNameLower = (membershipData.plan_name || '').toLowerCase()
+                if (formDataGender === 'female' || formDataGender === 'f' || formDataGender === 'girls' || formDataGender === 'girl') {
+                    determinedGender = 'girls'
+                } else if (planNameLower.includes('girls') || planNameLower.includes('girl')) {
+                    determinedGender = 'girls'
+                } else if ([700, 1400, 2400, 4400, 7800].includes(membershipData.price)) {
+                    determinedGender = 'girls'
                 }
+
+                // Determine renewal price across all plan types for boys and girls
+                const isFemale = determinedGender === 'girls'
+                let finalRenewalPrice = membershipData.price
+
+                if (planNameLower.includes('elite')) {
+                    finalRenewalPrice = isFemale ? 7800 : 6800
+                } else if (planNameLower.includes('premium')) {
+                    finalRenewalPrice = isFemale ? 4400 : 4000
+                } else if (planNameLower.includes('basic')) {
+                    finalRenewalPrice = isFemale ? 2400 : 2200
+                } else {
+                    // Regular Monthly
+                    finalRenewalPrice = isFemale ? 700 : 650
+                }
+
+                console.log('[RENEWAL] Plan:', planNameLower, 'Gender:', determinedGender, 'Price:', finalRenewalPrice)
+                setRenewalPrice(finalRenewalPrice)
             } catch (error: any) {
                 console.error('Error fetching membership:', error)
                 showToast('Error loading membership: ' + error.message, 'error')
@@ -201,9 +155,19 @@ function RenewMembershipContent() {
     }, [membership, now]);
 
     const handleRenew = () => {
-        if (!membership) return
-        // Redirect to payment page with membership ID
-        router.push(`/membership/payment?membershipId=${membership.id}&renewalType=membership`)
+        const isGirl = membership.form_data?.gender === 'female' ||
+            (membership.plan_name || '').toLowerCase().includes('girl') ||
+            [700, 1400, 2400, 4400, 7800].includes(membership.price)
+        const params = new URLSearchParams({
+            membershipId: membership.id.toString(),
+            renewalType: 'membership',
+            newPlanName: membership.plan_name,
+            newPlanType: membership.plan_type || 'in_gym',
+            newDuration: `${membership.duration_months} Months`,
+            newPrice: (renewalPrice || membership.price).toString(),
+            gender: isGirl ? 'girls' : 'boys'
+        })
+        router.push(`/membership/payment?${params.toString()}`)
     }
 
     if (loading) {

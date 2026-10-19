@@ -39,6 +39,7 @@ interface Membership {
     trainer_name?: string | null;
     grace_period_end?: string | null;
     trainer_grace_period_end?: string | null;
+    form_data?: any;
 }
 
 interface WeeklyChart {
@@ -1016,6 +1017,12 @@ export default function Dashboard() {
                                     // Use pre-calculated grace period data (calculated at component level with useMemo)
                                     const { isInGracePeriod: isInMembershipGracePeriod, daysRemaining: gracePeriodDaysRemaining } = membershipGracePeriodData;
 
+                                    const isGirl = membership.form_data?.gender === 'female' ||
+                                        (membership.plan_name || '').toLowerCase().includes('girl') ||
+                                        [700, 1400, 2400, 4400, 7800].includes(membership.price)
+                                    const renewalGender = isGirl ? 'girls' : 'boys'
+                                    const renewalLink = `/membership/payment?membershipId=${membership.id}&renewalType=membership&gender=${renewalGender}`
+
                                     if (isInMembershipGracePeriod && gracePeriodDaysRemaining !== null && gracePeriodDaysRemaining > 0) {
                                         return (
                                             <div className={styles.alertCard} style={{ background: '#fef3c7', borderColor: '#f59e0b' }}>
@@ -1024,7 +1031,7 @@ export default function Dashboard() {
                                                     <div className={styles.alertTitle} style={{ color: '#f59e0b' }}>Membership Grace Period</div>
                                                     <div className={styles.alertText}>
                                                         Your membership is in grace period ({gracePeriodDaysRemaining} day{gracePeriodDaysRemaining !== 1 ? 's' : ''} remaining).
-                                                        <a href={`/membership/renew?membershipId=${membership.id}`} style={{ marginLeft: '0.5rem', fontWeight: 600, textDecoration: 'underline' }}>Renew now</a> to reactivate your membership.
+                                                        <a href={renewalLink} style={{ marginLeft: '0.5rem', fontWeight: 600, textDecoration: 'underline' }}>Renew now</a> to reactivate your membership.
                                                     </div>
                                                 </div>
                                             </div>
@@ -1039,7 +1046,7 @@ export default function Dashboard() {
                                                 <div>
                                                     <div className={styles.alertTitle} style={{ color: '#dc2626' }}>Membership Expired</div>
                                                     <div className={styles.alertText}>
-                                                        Your membership expired {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''} ago. <a href="/contact">Contact us</a> to renew.
+                                                        Your membership expired {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''} ago. <a href={renewalLink} style={{ marginLeft: '0.5rem', fontWeight: 600, textDecoration: 'underline' }}>Click here to renew</a>.
                                                     </div>
                                                 </div>
                                             </div>
@@ -1051,7 +1058,7 @@ export default function Dashboard() {
                                                 <div>
                                                     <div className={styles.alertTitle} style={{ color: '#f59e0b' }}>Expiring Soon</div>
                                                     <div className={styles.alertText}>
-                                                        Your membership expires in {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''}.
+                                                        Your membership expires in {expirationStatus.daysRemaining} day{expirationStatus.daysRemaining !== 1 ? 's' : ''}. <a href={renewalLink} style={{ marginLeft: '0.5rem', fontWeight: 600, textDecoration: 'underline' }}>Renew now</a>.
                                                     </div>
                                                 </div>
                                             </div>

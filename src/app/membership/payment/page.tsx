@@ -27,6 +27,11 @@ function PaymentPageContent() {
     const [uploading, setUploading] = useState(false)
     const [membership, setMembership] = useState<any>(null)
     const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null)
+    const [upiId, setUpiId] = useState<string | null>(null)
+    const [upiMerchantName, setUpiMerchantName] = useState<string | null>(null)
+    const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null)
+    const [paymentConfigError, setPaymentConfigError] = useState<string | null>(null)
+    const [copiedUpi, setCopiedUpi] = useState(false)
     const { toast, toastType, showToast, hideToast } = useToast()
     const [paymentData, setPaymentData] = useState({
         transactionId: '',
@@ -40,32 +45,34 @@ function PaymentPageContent() {
     const [inGymAdmissionFee, setInGymAdmissionFee] = useState(1200)
     const [inGymMonthlyFee, setInGymMonthlyFee] = useState(650)
 
-    useEffect(() => {
-        // Fetch fees from public API
-        const fetchFees = async () => {
-            try {
-                const response = await fetch('/api/fees')
-                const data = await response.json()
-                if (data.success && data.fees) {
-                    setInGymAdmissionFee(data.fees.admissionFee || 1200)
-                    setInGymMonthlyFee(data.fees.monthlyFee || 650)
-                }
-            } catch (error) {
-                console.error('Error fetching fees:', error)
-            }
-        }
-        fetchFees()
-    }, [])
     const [addons, setAddons] = useState({
         inGym: false,
         personalTrainer: false,
         selectedTrainer: null as string | null
     })
 
-    const membershipId = searchParams.get('membershipId')
-    const renewalType = searchParams.get('renewalType') // 'trainer' for trainer renewal
+    const rawMembershipId = searchParams.get('membershipId')
+    const membershipId = rawMembershipId ? (rawMembershipId.match(/^\d+/)?.[0] || rawMembershipId) : null
+    const renewalType = searchParams.get('renewalType') || searchParams.get('renewType') || (searchParams.get('isRenewal') === 'true' ? 'membership' : null) // 'trainer' for trainer renewal or 'membership'
     const trainerId = searchParams.get('trainerId')
     const durationMonths = searchParams.get('durationMonths')
+    const newPlanId = searchParams.get('newPlanId') || searchParams.get('renewPlanId')
+    const newPlanName = searchParams.get('newPlanName') || searchParams.get('renewPlanName')
+    const newPlanType = searchParams.get('newPlanType')
+    const newDuration = searchParams.get('newDuration')
+    const newPrice = searchParams.get('newPrice')
+    const paramGender = searchParams.get('gender')
+
+    const [hasExistingPendingPayment, setHasExistingPendingPayment] = useState(false)
+    const [selectedRenewalPlan, setSelectedRenewalPlan] = useState<{
+        key: string
+        name: string
+        planType: 'online' | 'in_gym'
+        duration: string
+        durationMonths: number
+        price: number
+    } | null>(null)
+    const [userGender, setUserGender] = useState<'boys' | 'girls'>('boys')
 
     useEffect(() => {
         const fetchData = async () => {
@@ -74,131 +81,184 @@ function PaymentPageContent() {
                 return
             }
 
-            // Fetch membership details
-            const { data: membershipData, error: membershipError } = await supabase
-                .from('memberships')
-                .select('*')
-                .eq('id', membershipId)
-                .single()
-
-            if (membershipError || !membershipData) {
-                showToast('Membership not found', 'error')
-                setTimeout(() => router.push('/membership'), 2000)
-                return
-            }
-
-            setMembership(membershipData)
-
-            // Calculate renewal price for regular monthly plans
-            let renewalAmount = membershipData.price
-            if (renewalType === 'membership') {
-                const planName = membershipData.plan_name?.toLowerCase() || ''
-                const planType = membershipData.plan_type?.toLowerCase() || ''
-                // Check if it's a regular monthly plan (either by name or plan_type)
-                const isRegularMonthly = (planName.includes('regular') && planName.includes('monthly')) || 
-                                        planType === 'in_gym' || 
-                                        planName === 'regular monthly'
-                
-                console.log('[PAYMENT] Plan name:', planName, 'Plan type:', planType, 'Is regular monthly:', isRegularMonthly, 'Renewal type:', renewalType)
-                
-                if (isRegularMonthly) {
-                    // For regular monthly renewals, determine renewal price based on gender
-                    // Try multiple methods to determine gender:
-                    // 1. Check plan name for "boys" or "girls"
-                    // 2. Check user profile gender field
-                    // 3. Default based on original price
-                    
-                    let determinedGender: string | null = null
-                    
-                    // Method 1: Check plan name
-                    if (planName.includes('boys') || planName.includes('boy')) {
-                        determinedGender = 'boys'
-                    } else if (planName.includes('girls') || planName.includes('girl')) {
-                        determinedGender = 'girls'
-                    }
-                    
-                    // Method 2: Check user profile if plan name doesn't have gender
-                    if (!determinedGender) {
-                        try {
-                            const { data: { user } } = await supabase.auth.getUser()
-                            if (user) {
-                                const { data: profile, error: profileError } = await supabase
-                                    .from('profiles')
-                                    .select('gender')
-                                    .eq('id', user.id)
-                                    .single()
-
-                                console.log('[PAYMENT] Profile data:', profile, 'Error:', profileError)
-                                
-                                if (profile?.gender) {
-                                    determinedGender = profile.gender.toLowerCase()
-                                }
-                            }
-                        } catch (error) {
-                            console.error('[PAYMENT] Error fetching user gender:', error)
-                        }
-                    }
-                    
-                    console.log('[PAYMENT] Determined gender:', determinedGender)
-                    
-                    // Set renewal price based on gender
-                    if (determinedGender === 'boys' || determinedGender === 'male' || determinedGender === 'm') {
-                        console.log('[PAYMENT] Setting renewal amount to 650 (boys)')
-                        renewalAmount = 650 // Boys renewal price
-                    } else if (determinedGender === 'girls' || determinedGender === 'female' || determinedGender === 'f') {
-                        console.log('[PAYMENT] Setting renewal amount to 700 (girls)')
-                        renewalAmount = 700 // Girls renewal price
-                    } else {
-                        // Fallback: If original price is 1200, assume boys (650), if 1400, assume girls (700)
-                        if (membershipData.price === 1200) {
-                            console.log('[PAYMENT] Price is 1200, assuming boys plan, setting to 650')
-                            renewalAmount = 650
-                        } else if (membershipData.price === 1400) {
-                            console.log('[PAYMENT] Price is 1400, assuming girls plan, setting to 700')
-                            renewalAmount = 700
-                        } else {
-                            console.log('[PAYMENT] Cannot determine gender, using original price:', membershipData.price)
-                            renewalAmount = membershipData.price
-                        }
-                    }
-                } else {
-                    console.log('[PAYMENT] Not a regular monthly plan, using original price:', membershipData.price)
-                }
-            }
-
-            console.log('[PAYMENT] Final renewal amount:', renewalAmount, 'Original price:', membershipData.price)
-            setPaymentData(prev => ({
-                ...prev,
-                amount: renewalAmount.toString()
-            }))
-
-            // Fetch active trainers with prices from database
             try {
-                const trainersResponse = await fetch('/api/trainers')
-                if (trainersResponse.ok) {
-                    const trainersData = await trainersResponse.json()
-                    const trainersList = trainersData.trainers.map((t: any) => ({
+                // Fetch independent resources in parallel to eliminate waterfall latency
+                const [
+                    membershipRes,
+                    pendingPaymentRes,
+                    userRes,
+                    feesRes,
+                    trainersRes,
+                    paymentConfigRes
+                ] = await Promise.allSettled([
+                    supabase.from('memberships').select('*').eq('id', membershipId).single(),
+                    supabase.from('membership_payments').select('id, transaction_id, created_at').eq('membership_id', membershipId).eq('status', 'pending').limit(1).maybeSingle(),
+                    supabase.auth.getUser(),
+                    fetch('/api/fees').then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch('/api/trainers').then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch('/api/payment-qr').then(r => r.ok ? r.json() : null).catch(() => null),
+                ]);
+
+                // Validate membership
+                if (membershipRes.status !== 'fulfilled' || membershipRes.value.error || !membershipRes.value.data) {
+                    showToast('Membership not found', 'error')
+                    setTimeout(() => router.push('/membership'), 2000)
+                    return
+                }
+
+                const membershipData = membershipRes.value.data
+                setMembership(membershipData)
+
+                // Check pending payment
+                if (pendingPaymentRes.status === 'fulfilled' && pendingPaymentRes.value.data) {
+                    setHasExistingPendingPayment(true)
+                }
+
+                // Parse fees
+                let currentAdmissionFee = 1200
+                let currentMonthlyFee = 650
+                if (feesRes.status === 'fulfilled' && feesRes.value?.success && feesRes.value.fees) {
+                    currentAdmissionFee = feesRes.value.fees.admissionFee || 1200
+                    currentMonthlyFee = feesRes.value.fees.monthlyFee || 650
+                    setInGymAdmissionFee(currentAdmissionFee)
+                    setInGymMonthlyFee(currentMonthlyFee)
+                }
+
+                // Parse trainers
+                if (trainersRes.status === 'fulfilled' && trainersRes.value?.trainers) {
+                    const trainersList = trainersRes.value.trainers.map((t: any) => ({
                         id: t.id,
                         name: t.name,
-                        price: t.price || 0 // Use price from database
+                        price: t.price || 0
                     }))
                     setTrainers(trainersList)
                 }
-            } catch (error) {
-                console.error('Error fetching trainers:', error)
-            }
 
-            // Fetch QR code URL from API route (bypasses RLS)
-            try {
-                const qrResponse = await fetch('/api/payment-qr')
-                if (qrResponse.ok) {
-                    const qrData = await qrResponse.json()
-                    if (qrData.success && qrData.qrCodeUrl) {
-                        setQrCodeUrl(qrData.qrCodeUrl)
+                // Parse payment config - require both QR and UPI ID
+                if (paymentConfigRes.status === 'fulfilled' && paymentConfigRes.value?.success) {
+                    const config = paymentConfigRes.value
+                    if (config.qrCodeUrl && config.upiId) {
+                        setQrCodeUrl(config.qrCodeUrl)
+                        setUpiId(config.upiId)
+                        setUpiMerchantName(config.upiMerchantName || 'THE 24 FITNESS GYM')
+                        setPaymentInstructions(config.instructions || null)
+                        setPaymentConfigError(null)
+                    } else {
+                        setPaymentConfigError('Payment configuration is incomplete. The admin has not configured the official UPI ID or payment QR code in admin settings. Please contact gym administration.')
+                    }
+                } else {
+                    setPaymentConfigError('Payment configuration is currently unavailable. Unable to retrieve official payment settings from the gym server.')
+                }
+
+                // Determine member gender for authoritative pricing
+                let determinedGender: string | null = null
+                const paramG = (paramGender || searchParams.get('gender') || '').toLowerCase()
+                const planIdLower = (newPlanId || '').toLowerCase()
+                const planNameLower = (newPlanName || membershipData.plan_name || '').toLowerCase()
+                const formDataGender = (membershipData.form_data?.gender || '').toLowerCase()
+
+                if (paramG === 'girls' || paramG === 'female' || paramG === 'girl' || paramG === 'f') {
+                    determinedGender = 'girls'
+                } else if (paramG === 'boys' || paramG === 'male' || paramG === 'boy' || paramG === 'm') {
+                    determinedGender = 'boys'
+                } else if (planIdLower.includes('girls') || planIdLower.includes('girl')) {
+                    determinedGender = 'girls'
+                } else if (planIdLower.includes('boys') || planIdLower.includes('boy')) {
+                    determinedGender = 'boys'
+                } else if (planNameLower.includes('girls') || planNameLower.includes('girl')) {
+                    determinedGender = 'girls'
+                } else if (planNameLower.includes('boys') || planNameLower.includes('boy')) {
+                    determinedGender = 'boys'
+                } else if (formDataGender === 'female' || formDataGender === 'f' || formDataGender === 'girl' || formDataGender === 'girls') {
+                    determinedGender = 'girls'
+                } else if (formDataGender === 'male' || formDataGender === 'm' || formDataGender === 'boy' || formDataGender === 'boys') {
+                    determinedGender = 'boys'
+                } else if (membershipData.price === 700 || membershipData.price === 1400 || membershipData.price === 2400 || membershipData.price === 4400 || membershipData.price === 7800) {
+                    determinedGender = 'girls'
+                }
+
+                if (!determinedGender && userRes.status === 'fulfilled' && userRes.value?.data?.user) {
+                    const u = userRes.value.data.user
+                    const metaG = (u.user_metadata?.gender || '').toLowerCase()
+                    if (metaG === 'female' || metaG === 'f' || metaG === 'girls') {
+                        determinedGender = 'girls'
+                    } else if (metaG === 'male' || metaG === 'm' || metaG === 'boys') {
+                        determinedGender = 'boys'
                     }
                 }
-            } catch (error) {
-                console.error('Error fetching QR code:', error)
+
+                const isFemale = determinedGender === 'girls'
+                setUserGender(isFemale ? 'girls' : 'boys')
+
+                // Calculate renewal price and initialize dynamic tier plan state
+                let renewalAmount = membershipData.price
+                let initialPlan: {
+                    key: string
+                    name: string
+                    planType: 'online' | 'in_gym'
+                    duration: string
+                    durationMonths: number
+                    price: number
+                }
+
+                const targetPlan = (newPlanName || membershipData.plan_name || '').toLowerCase()
+                if (targetPlan.includes('elite')) {
+                    renewalAmount = isFemale ? 7800 : 6800
+                    initialPlan = {
+                        key: 'elite',
+                        name: 'Elite',
+                        planType: 'online',
+                        duration: '12 Months',
+                        durationMonths: 12,
+                        price: renewalAmount
+                    }
+                } else if (targetPlan.includes('premium')) {
+                    renewalAmount = isFemale ? 4400 : 4000
+                    initialPlan = {
+                        key: 'premium',
+                        name: 'Premium',
+                        planType: 'online',
+                        duration: '6 Months',
+                        durationMonths: 6,
+                        price: renewalAmount
+                    }
+                } else if (targetPlan.includes('basic')) {
+                    renewalAmount = isFemale ? 2400 : 2200
+                    initialPlan = {
+                        key: 'basic',
+                        name: 'Basic',
+                        planType: 'online',
+                        duration: '3 Months',
+                        durationMonths: 3,
+                        price: renewalAmount
+                    }
+                } else {
+                    renewalAmount = isFemale ? 700 : (currentMonthlyFee || 650)
+                    initialPlan = {
+                        key: 'regular',
+                        name: 'Regular Monthly',
+                        planType: 'in_gym',
+                        duration: '1 Month',
+                        durationMonths: 1,
+                        price: renewalAmount
+                    }
+                }
+
+                if (newPrice && !targetPlan.includes('regular') && !targetPlan.includes('basic') && !targetPlan.includes('premium') && !targetPlan.includes('elite')) {
+                    renewalAmount = parseFloat(newPrice)
+                    initialPlan.price = renewalAmount
+                }
+
+                setSelectedRenewalPlan(initialPlan)
+
+                console.log('[PAYMENT] Final renewal amount:', renewalAmount, 'Selected tier:', initialPlan.name)
+                setPaymentData(prev => ({
+                    ...prev,
+                    amount: renewalAmount.toString()
+                }))
+            } catch (err: any) {
+                console.error('[PAYMENT] Error initializing payment page:', err)
+                showToast('Failed to load payment details', 'error')
             }
         }
 
@@ -334,23 +394,44 @@ function PaymentPageContent() {
             }
 
             // Regular membership payment submission
+            const payload: any = {
+                transactionId: paymentData.transactionId,
+                paymentDate: paymentData.paymentDate,
+                amount: totalAmount,
+                screenshotPath: screenshotPath,
+                addons: {
+                    inGym: addons.inGym,
+                    personalTrainer: addons.personalTrainer,
+                    selectedTrainer: addons.selectedTrainer
+                }
+            }
+
+            const currentPlanName = (membership.plan_name || '').toLowerCase()
+            const activePlanName = selectedRenewalPlan ? selectedRenewalPlan.name : (newPlanName || membership.plan_name)
+            const activePlanType = selectedRenewalPlan ? selectedRenewalPlan.planType : (newPlanType || membership.plan_type || 'in_gym')
+            const activeDurationMonths = selectedRenewalPlan
+                ? selectedRenewalPlan.durationMonths
+                : (newDuration?.includes('12') ? 12 : newDuration?.includes('6') ? 6 : newDuration?.includes('3') ? 3 : 1)
+
+            const isPlanSwitched = activePlanName.toLowerCase() !== currentPlanName ||
+                (selectedRenewalPlan && selectedRenewalPlan.planType !== (membership.plan_type || ''))
+
+            if (isPlanSwitched) {
+                payload.newPlan = {
+                    planName: activePlanName,
+                    planType: activePlanType,
+                    durationMonths: activeDurationMonths,
+                    price: basePlanPrice
+                }
+            }
+
             const submitResponse = await fetch(`/api/memberships/${membershipId}/submit-payment`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${session.access_token}`
                 },
-                body: JSON.stringify({
-                    transactionId: paymentData.transactionId,
-                    paymentDate: paymentData.paymentDate,
-                    amount: totalAmount,
-                    screenshotPath: screenshotPath,
-                    addons: {
-                        inGym: addons.inGym,
-                        personalTrainer: addons.personalTrainer,
-                        selectedTrainer: addons.selectedTrainer
-                    }
-                })
+                body: JSON.stringify(payload)
             })
 
             if (!submitResponse.ok) {
@@ -371,7 +452,7 @@ function PaymentPageContent() {
                 event: 'admin_notification',
                 payload: {
                     type: 'new_membership_payment',
-                    content: `A user has submitted payment for ${membership.plan_name} membership. Please verify.`,
+                    content: `A user has submitted payment for ${activePlanName} membership. Please verify.`,
                     membershipId: membershipId
                 }
             })
@@ -387,6 +468,78 @@ function PaymentPageContent() {
         }
     }
 
+    const isFemale = userGender === 'girls'
+    const availablePlans = [
+        {
+            key: 'regular',
+            name: 'Regular Monthly',
+            planType: 'in_gym' as const,
+            duration: '1 Month',
+            durationMonths: 1,
+            price: isFemale ? 700 : inGymMonthlyFee
+        },
+        {
+            key: 'basic',
+            name: 'Basic',
+            planType: 'online' as const,
+            duration: '3 Months',
+            durationMonths: 3,
+            price: isFemale ? 2400 : 2200
+        },
+        {
+            key: 'premium',
+            name: 'Premium',
+            planType: 'online' as const,
+            duration: '6 Months',
+            durationMonths: 6,
+            price: isFemale ? 4400 : 4000
+        },
+        {
+            key: 'elite',
+            name: 'Elite',
+            planType: 'online' as const,
+            duration: '12 Months',
+            durationMonths: 12,
+            price: isFemale ? 7800 : 6800
+        }
+    ]
+
+    const handleSwitchGender = (newGender: 'boys' | 'girls') => {
+        setUserGender(newGender)
+        const female = newGender === 'girls'
+        if (selectedRenewalPlan) {
+            let updatedPrice = selectedRenewalPlan.price
+            if (selectedRenewalPlan.key === 'elite') {
+                updatedPrice = female ? 7800 : 6800
+            } else if (selectedRenewalPlan.key === 'premium') {
+                updatedPrice = female ? 4400 : 4000
+            } else if (selectedRenewalPlan.key === 'basic') {
+                updatedPrice = female ? 2400 : 2200
+            } else {
+                updatedPrice = female ? 700 : inGymMonthlyFee
+            }
+            setSelectedRenewalPlan(prev => prev ? ({
+                ...prev,
+                price: updatedPrice
+            }) : null)
+            setPaymentData(prev => ({
+                ...prev,
+                amount: updatedPrice.toString()
+            }))
+        }
+    }
+
+    const handleSwitchPlan = (p: typeof availablePlans[0]) => {
+        setSelectedRenewalPlan(p)
+        setPaymentData(prev => ({
+            ...prev,
+            amount: p.price.toString()
+        }))
+        if (p.planType === 'in_gym') {
+            setAddons(prev => ({ ...prev, inGym: false }))
+        }
+    }
+
     if (!membership) {
         return (
             <>
@@ -399,21 +552,14 @@ function PaymentPageContent() {
         )
     }
 
-    // Calculate addon prices
-    // IMPORTANT:
-    // - For inherently in-gym plans (Regular Monthly), the membership price already includes joining/admission + 1st month.
-    //   So we must NOT add admission fee again in payment breakdown or total.
-    // - For online plans (or plans that can add in-gym access), user can optionally add in-gym access as an addon (admission fee).
-    // - For trainer renewals, use the amount from URL params
-    // Use base plan type (from plan configuration) instead of current membership state
-    const planConfig = {
-        planName: membership.plan_name || '',
-        planType: membership.plan_type || '',
-        durationMonths: membership.duration_months
-    };
-    const basePlanType = getBasePlanType(planConfig);
-    const isInherentlyInGymPlan = basePlanType === 'in_gym';
-    const inGymAddonPrice = !isInherentlyInGymPlan && addons.inGym ? inGymAdmissionFee : 0
+    // Calculate addon prices with dynamic plan selection
+    const activeDisplayName = selectedRenewalPlan ? selectedRenewalPlan.name : (newPlanName || membership.plan_name)
+    const activePlanType = selectedRenewalPlan ? selectedRenewalPlan.planType : (newPlanType || membership.plan_type || 'in_gym')
+    const activeDurationText = selectedRenewalPlan ? selectedRenewalPlan.duration : (newDuration || (membership.duration_months === 3 ? '3 Months' : membership.duration_months === 6 ? '6 Months' : membership.duration_months === 12 ? '12 Months' : `${membership.duration_months} Months`))
+
+    const isInherentlyInGymPlan = activePlanType === 'in_gym' || activeDisplayName.toLowerCase().includes('regular')
+    // In-gym offline add-on has no extra fee (removed per gym specification)
+    const inGymAddonPrice = 0
     
     let trainerAddonPrice = 0
     if (renewalType === 'trainer' && trainerId && durationMonths) {
@@ -427,20 +573,11 @@ function PaymentPageContent() {
             : 0
     }
 
-    const basePlanPrice = renewalType === 'trainer' ? 0 : (parseFloat(paymentData.amount) || 0)
+    const basePlanPrice = renewalType === 'trainer' ? 0 : (selectedRenewalPlan ? selectedRenewalPlan.price : (parseFloat(paymentData.amount) || 0))
     const totalAmount = basePlanPrice + inGymAddonPrice + trainerAddonPrice
 
-    // Determine display plan type - if in-gym addon is selected, show as "In-Gym Training"
-    // Use base plan type for display, but show as in-gym if addon is selected
-    const displayPlanType = addons.inGym ? 'in_gym' : basePlanType
-
-    // Get plan duration in months for display
-    const getDurationText = () => {
-        if (membership.duration_months === 3) return '3 Months'
-        if (membership.duration_months === 6) return '6 Months'
-        if (membership.duration_months === 12) return '12 Months'
-        return `${membership.duration_months} Months`
-    }
+    // Determine display plan type
+    const displayPlanType = activePlanType
 
     return (
         <>
@@ -453,10 +590,78 @@ function PaymentPageContent() {
                     </button>
                     <h1 className={styles.title}>Complete Payment</h1>
                     <div className={styles.planSummary}>
-                        <span className={styles.planName}>{membership.plan_name} Plan</span>
+                        <span className={styles.planName}>{activeDisplayName} Plan</span>
                         <span className={styles.planType}>{displayPlanType === 'online' ? 'Online' : 'In-Gym'}</span>
                     </div>
                 </div>
+
+                {/* Existing pending payment warning banner */}
+                {hasExistingPendingPayment && (
+                    <div style={{
+                        background: 'rgba(245, 158, 11, 0.12)',
+                        border: '1px solid #f59e0b',
+                        borderRadius: '0.75rem',
+                        padding: '1rem',
+                        marginBottom: '1.5rem',
+                        color: '#fbbf24',
+                        fontSize: '0.95rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem'
+                    }}>
+                        <span style={{ fontWeight: 700 }}>⚠️ Verification In Review:</span>
+                        <span>A payment verification is already pending for this membership. Gym management will verify and activate your access. Duplicate submissions are disabled.</span>
+                    </div>
+                )}
+
+                {/* Dynamic Tier Switcher Bar (Only for membership renewals/purchases) */}
+                {renewalType !== 'trainer' && (
+                    <div className={styles.planSelectorCard}>
+                        <div className={styles.planSelectorHeader}>
+                            <div>
+                                <h2 className={styles.planSelectorTitle}>Select Membership Plan</h2>
+                                <span className={styles.planSelectorHint}>Click any tier to switch dynamically</span>
+                            </div>
+                            <div className={styles.genderToggleWrap}>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSwitchGender('boys')}
+                                    className={`${styles.genderToggleBtn} ${userGender === 'boys' ? styles.genderToggleBtnActive : ''}`}
+                                >
+                                    👦 Boys Plans
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSwitchGender('girls')}
+                                    className={`${styles.genderToggleBtn} ${userGender === 'girls' ? styles.genderToggleBtnActive : ''}`}
+                                >
+                                    👧 Girls Plans
+                                </button>
+                            </div>
+                        </div>
+                        <div className={styles.planPillsGrid}>
+                            {availablePlans.map((p) => {
+                                const isSelected = selectedRenewalPlan?.key === p.key ||
+                                    (p.key === 'regular' && (selectedRenewalPlan?.name.toLowerCase().includes('regular') || selectedRenewalPlan?.planType === 'in_gym')) ||
+                                    (p.key !== 'regular' && selectedRenewalPlan?.name.toLowerCase().includes(p.key));
+                                return (
+                                    <button
+                                        key={p.key}
+                                        type="button"
+                                        onClick={() => handleSwitchPlan(p)}
+                                        className={`${styles.planPill} ${isSelected ? styles.planPillActive : ''}`}
+                                    >
+                                        <div className={styles.planPillText}>
+                                            <span className={styles.planPillName}>{p.name}</span>
+                                            <span className={styles.planPillDuration}>{p.duration}</span>
+                                        </div>
+                                        <span className={styles.planPillPrice}>₹{p.price.toLocaleString()}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
 
                 {/* Price Breakdown Section */}
                 <div className={styles.priceBreakdown}>
@@ -464,20 +669,10 @@ function PaymentPageContent() {
                     <div className={styles.priceDetails}>
                         <div className={styles.priceRow}>
                             <span className={styles.priceLabel}>
-                                {membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)} Plan ({getDurationText()})
+                                {activeDisplayName.charAt(0).toUpperCase() + activeDisplayName.slice(1)} Plan ({activeDurationText})
                             </span>
                             <span className={styles.priceValue}>₹{basePlanPrice.toLocaleString()}</span>
                         </div>
-
-                        {/* Only show in-gym admission/addon fee if user selected in-gym as an addon and plan is not inherently in-gym */}
-                        {!isInherentlyInGymPlan && addons.inGym && (
-                            <div className={styles.priceRow}>
-                                <span className={styles.priceLabel}>
-                                    In-Gym Add-On (Admission Fee)
-                                </span>
-                                <span className={styles.priceValue}>₹{inGymAddonPrice.toLocaleString()}</span>
-                            </div>
-                        )}
 
                         {addons.personalTrainer && addons.selectedTrainer && (
                             <div className={styles.priceRow}>
@@ -500,33 +695,6 @@ function PaymentPageContent() {
                 <div className={styles.addonsContainer}>
                     <h2 className={styles.addonsTitle}>Add-On Options</h2>
                     <div className={styles.addonsSection}>
-                        {/* In-Gym Add-on - Show based on plan configuration, not historical state */}
-                        {(() => {
-                            // Determine eligibility based on plan configuration, not current membership state
-                            // This ensures addon is available on every renewal, regardless of previous selections
-                            const planConfig = {
-                                planName: membership.plan_name || '',
-                                planType: membership.plan_type || '',
-                                durationMonths: membership.duration_months
-                            };
-                            return isInGymAddonAvailable(planConfig);
-                        })() && (
-                            <div className={styles.addonCard}>
-                                <label className={styles.addonLabel}>
-                                    <input
-                                        type="checkbox"
-                                        checked={addons.inGym}
-                                        onChange={(e) => setAddons(prev => ({ ...prev, inGym: e.target.checked }))}
-                                        className={styles.checkbox}
-                                    />
-                                    <div className={styles.addonContent}>
-                                        <h3>In-Gym (Offline) Add-On</h3>
-                                        <p>Access to physical gym facilities</p>
-                                        <p className={styles.addonPrice}>₹{inGymAdmissionFee.toLocaleString()} (Admission Fee)</p>
-                                    </div>
-                                </label>
-                            </div>
-                        )}
 
                         {/* Personal Trainer Add-on - Always available for all plans */}
                         {(() => {
@@ -605,6 +773,25 @@ function PaymentPageContent() {
                 )}
 
                 <form onSubmit={handleSubmit} className={styles.form}>
+                    {/* Payment Config Error Banner */}
+                    {paymentConfigError && (
+                        <div style={{
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid #ef4444',
+                            borderRadius: '0.75rem',
+                            padding: '1.25rem',
+                            marginBottom: '1.5rem',
+                            color: '#f87171',
+                            fontSize: '0.95rem'
+                        }}>
+                            <div style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span>❌</span>
+                                <span>Payment Configuration Error</span>
+                            </div>
+                            <div>{paymentConfigError}</div>
+                        </div>
+                    )}
+
                     {/* QR Code Section */}
                     <div className={styles.section}>
                         <h2 className={styles.sectionTitle}>Payment QR Code</h2>
@@ -613,12 +800,61 @@ function PaymentPageContent() {
                                 <img src={qrCodeUrl} alt="Payment QR Code" className={styles.qrCode} />
                             ) : (
                                 <div className={styles.qrPlaceholder}>
-                                    <p>QR Code will be displayed here</p>
-                                    <p className={styles.qrNote}>Admin will upload the QR code image</p>
+                                    <p style={{ color: '#ef4444', fontWeight: 600 }}>QR Code Unavailable</p>
+                                    <p className={styles.qrNote}>Official payment QR code is not configured in admin settings.</p>
                                 </div>
                             )}
+
+                            {upiId && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '1rem',
+                                    marginTop: '1.25rem',
+                                    padding: '0.75rem 1.25rem',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    borderRadius: '0.5rem',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    maxWidth: '380px',
+                                    margin: '1.25rem auto 0 auto'
+                                }}>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <div style={{ fontSize: '0.75rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Official UPI ID</div>
+                                        <div style={{ fontWeight: 700, color: '#f3f4f6', fontFamily: 'monospace', fontSize: '1rem' }}>{upiId}</div>
+                                        {upiMerchantName && (
+                                            <div style={{ fontSize: '0.75rem', color: '#fbbf24', marginTop: '2px' }}>{upiMerchantName}</div>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (upiId) {
+                                                navigator.clipboard.writeText(upiId)
+                                                setCopiedUpi(true)
+                                                showToast('UPI ID copied to clipboard', 'success')
+                                                setTimeout(() => setCopiedUpi(false), 2000)
+                                            }
+                                        }}
+                                        style={{
+                                            padding: '0.45rem 0.85rem',
+                                            borderRadius: '0.375rem',
+                                            border: '1px solid #e11d48',
+                                            background: copiedUpi ? '#e11d48' : 'transparent',
+                                            color: '#fff',
+                                            cursor: 'pointer',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600,
+                                            whiteSpace: 'nowrap'
+                                        }}
+                                    >
+                                        {copiedUpi ? 'Copied ✓' : 'Copy UPI'}
+                                    </button>
+                                </div>
+                            )}
+
                             <p className={styles.qrInstructions}>
-                                Scan this QR code to make your payment. After payment, fill in the details below and upload the screenshot.
+                                {paymentInstructions || 'Scan this QR code or transfer to the official UPI ID above. After payment, enter your 12-digit UTR reference below and upload the confirmation screenshot.'}
                             </p>
                         </div>
                     </div>
@@ -628,14 +864,14 @@ function PaymentPageContent() {
                         <h2 className={styles.sectionTitle}>Payment Details</h2>
                         <div className={styles.formGrid}>
                             <div className={styles.formGroup}>
-                                <label htmlFor="transactionId">Transaction ID *</label>
+                                <label htmlFor="transactionId">Transaction ID (UTR) *</label>
                                 <input
                                     type="text"
                                     id="transactionId"
                                     value={paymentData.transactionId}
                                     onChange={(e) => setPaymentData(prev => ({ ...prev, transactionId: e.target.value }))}
                                     required
-                                    placeholder="Enter transaction ID"
+                                    placeholder="Enter 12-digit UTR number"
                                 />
                             </div>
                             <div className={styles.formGroup}>
@@ -720,8 +956,17 @@ function PaymentPageContent() {
                         <button type="button" onClick={() => router.back()} className={styles.cancelButton}>
                             Cancel
                         </button>
-                        <button type="submit" className={styles.submitButton} disabled={loading || uploading}>
-                            {loading || uploading ? (
+                        <button
+                            type="submit"
+                            className={styles.submitButton}
+                            disabled={loading || uploading || hasExistingPendingPayment || Boolean(paymentConfigError)}
+                            style={hasExistingPendingPayment || Boolean(paymentConfigError) ? { opacity: 0.6, cursor: 'not-allowed', background: '#4b5563' } : undefined}
+                        >
+                            {hasExistingPendingPayment ? (
+                                'Verification Pending Approval'
+                            ) : paymentConfigError ? (
+                                'Payment Unavailable (Config Error)'
+                            ) : loading || uploading ? (
                                 <>
                                     <Loader2 className={styles.spinner} size={20} />
                                     {uploading ? 'Uploading...' : 'Submitting...'}

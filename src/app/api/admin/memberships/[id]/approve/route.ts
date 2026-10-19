@@ -138,48 +138,63 @@ export async function POST(
             }
         }
 
-        // For renewals, extend dates; for new memberships, create new dates
-        // SPECIAL CASE: Regular Monthly plans ALWAYS reset from approval date (not extend from expired dates)
+        // Check if there is a pending plan switch stored in form_data.renewal_pending_plan
+        const pendingPlan = (membership.form_data && typeof membership.form_data === 'object')
+            ? membership.form_data.renewal_pending_plan
+            : null;
+
+        let finalPlanName = membership.plan_name;
+        let finalPlanType = membership.plan_type;
+        let finalDuration = Number(membership.duration_months) || 1;
+        let finalPrice = membership.price;
+
+        if (pendingPlan) {
+            if (pendingPlan.planName) finalPlanName = String(pendingPlan.planName).toLowerCase();
+            if (pendingPlan.planType) finalPlanType = pendingPlan.planType;
+            if (pendingPlan.durationMonths) finalDuration = Number(pendingPlan.durationMonths);
+            if (pendingPlan.price) finalPrice = Number(pendingPlan.price);
+            console.log('[APPROVE] Applying pending plan switch upon approval:', {
+                membershipId,
+                finalPlanName,
+                finalPlanType,
+                finalDuration,
+                finalPrice
+            });
+        }
+
+        // Authoritative Date Calculations:
+        // - Active renewal: current end date is strictly in the future.
+        //   Extend from current end date so the member does NOT lose any paid days.
+        // - Expired renewal / grace period or new purchase:
+        //   Start fresh from today (approval date), so no unintended free time is granted.
+        const now = new Date();
+        const currentEndDateStr = membership.membership_end_date || membership.end_date;
+        const currentEndDate = currentEndDateStr ? new Date(currentEndDateStr) : null;
+        const isActiveRenewal = isRenewal && currentEndDate !== null && currentEndDate > now;
+
         let startDate: Date;
         let endDate: Date;
 
-        const planName = membership.plan_name?.toLowerCase() || '';
-        const isRegularMonthly = planName.includes('regular') && (planName.includes('monthly') || membership.duration_months === 1);
-
-        if (isRenewal) {
-            // Regular Monthly plans: ALWAYS reset from approval date (independent lifecycle)
-            // This ensures that when a Regular Monthly plan expires and is renewed, it starts fresh from approval date
-            // Trainer access is independent but coordinated - trainer period starts from membership start date
-            if (isRegularMonthly) {
-                // Regular Monthly renewal: reset from approval date (now), not extend from expired dates
-                startDate = new Date();
-                endDate = addMonths(startDate, membership.duration_months);
-                console.log('[APPROVE] Regular Monthly plan renewal - resetting dates from approval date:', {
-                    membershipId,
-                    startDate: startDate.toISOString(),
-                    endDate: endDate.toISOString(),
-                    durationMonths: membership.duration_months,
-                    previousEndDate: membership.membership_end_date
-                });
-            } else {
-                // Other plans (Basic, Premium, Elite): extend from current end date
-                const currentEndDate = membership.membership_end_date
-                    ? new Date(membership.membership_end_date)
-                    : new Date();
-                startDate = currentEndDate > new Date() ? currentEndDate : new Date();
-                endDate = addMonths(startDate, membership.duration_months);
-                console.log('[APPROVE] Non-Regular plan renewal - extending from current end date:', {
-                    membershipId,
-                    startDate: startDate.toISOString(),
-                    endDate: endDate.toISOString(),
-                    durationMonths: membership.duration_months,
-                    previousEndDate: membership.membership_end_date
-                });
-            }
+        if (isActiveRenewal && currentEndDate) {
+            startDate = membership.membership_start_date
+                ? new Date(membership.membership_start_date)
+                : (membership.start_date ? new Date(membership.start_date) : now);
+            endDate = addMonths(currentEndDate, finalDuration);
+            console.log('[APPROVE] Active renewal - extending from current end date without lost days:', {
+                membershipId,
+                currentEndDate: currentEndDate.toISOString(),
+                newEndDate: endDate.toISOString(),
+                durationMonths: finalDuration
+            });
         } else {
-            // New membership: create new dates
-            startDate = new Date();
-            endDate = addMonths(startDate, membership.duration_months);
+            startDate = now;
+            endDate = addMonths(startDate, finalDuration);
+            console.log('[APPROVE] New membership or expired renewal - starting fresh from approval date (no free time):', {
+                membershipId,
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString(),
+                durationMonths: finalDuration
+            });
         }
 
         // Get membership addons to check for trainer
@@ -213,7 +228,6 @@ export async function POST(
             .single();
 
         // Determine trainer assignment logic
-        // Note: planName is already defined above
         let trainerId: string | null = null;
         let trainerPeriodEnd: Date | null = null;
 
@@ -221,36 +235,30 @@ export async function POST(
             // Use the trainer from pending assignment
             trainerId = pendingAssignment.trainer_id;
 
-            // Recalculate period with actual start date (NEW membership start date for renewals)
-            // For Regular Monthly renewals with trainer addon, this creates a NEW independent trainer period
-            // starting from the renewed membership start date, not tied to any previous trainer assignment
+            // Recalculate period with actual start date
             const assignmentConfig: TrainerAssignmentConfig = {
-                planName: membership.plan_name,
-                planMode: membership.plan_mode || 'Online',
+                planName: finalPlanName,
+                planMode: finalPlanType === 'in_gym' ? 'InGym' : 'Online',
                 hasTrainerAddon: hasTrainerAddon,
                 selectedTrainerId: trainerId,
-                durationMonths: membership.duration_months
+                durationMonths: finalDuration
             };
 
             const { periodEnd } = calculateTrainerPeriod(startDate, assignmentConfig);
             
-            // Ensure trainer period never exceeds membership end date (coordinated lifecycle)
-            // This is critical for Regular Monthly plans where trainer addon matches membership duration
+            // Ensure trainer period never exceeds membership end date
             trainerPeriodEnd = periodEnd > endDate ? endDate : periodEnd;
             
             console.log('[APPROVE] Trainer period calculated:', {
                 membershipId,
-                planName,
-                isRegularMonthly,
+                finalPlanName,
                 membershipStartDate: startDate.toISOString(),
                 membershipEndDate: endDate.toISOString(),
                 calculatedTrainerPeriodEnd: periodEnd.toISOString(),
-                finalTrainerPeriodEnd: trainerPeriodEnd.toISOString(),
-                trainerPeriodExceedsMembership: periodEnd > endDate
+                finalTrainerPeriodEnd: trainerPeriodEnd.toISOString()
             });
 
             // Update assignment with correct dates and status to 'assigned'
-            // Note: We don't set assigned_by because admin ID might not be in users table
             const { error: assignmentUpdateError } = await supabaseAdmin
                 .from('trainer_assignments')
                 .update({
@@ -267,7 +275,6 @@ export async function POST(
                     assignmentId: pendingAssignment.id,
                     membershipId
                 });
-                // Don't throw - continue with approval
             } else {
                 console.log('[APPROVE] Successfully updated trainer assignment status to assigned:', {
                     assignmentId: pendingAssignment.id,
@@ -275,23 +282,32 @@ export async function POST(
                     trainerId
                 });
             }
-        } else if (planName === 'premium' || planName === 'elite') {
-            // Premium/Elite plans include trainer, but no assignment request yet
-            // Admin needs to assign trainer manually (this will be handled in admin panel)
-            // For now, we'll just note that trainer assignment is needed
-            console.log(`Plan ${planName} includes trainer - admin should assign trainer via admin panel`);
+        } else if (finalPlanName.includes('premium') || finalPlanName.includes('elite')) {
+            console.log(`Plan ${finalPlanName} includes trainer - admin should assign trainer via admin panel`);
         }
 
         // Check if this is a grace period reactivation (renewal during grace period)
         const isGracePeriodReactivation = shouldReactivateMembership(membership.status, membership.grace_period_end);
 
-        // Update membership status to active and set dates
+        // Prepare updated form_data (removing temporary renewal_pending_plan)
+        const updatedFormData = { ...(membership.form_data || {}) };
+        if (pendingPlan) {
+            delete updatedFormData.renewal_pending_plan;
+        }
+
+        // Update membership status to active, set authoritative dates, and apply approved plan
         const updateData: any = {
             status: 'active',
             start_date: startDate.toISOString(),
             end_date: endDate.toISOString(),
             membership_start_date: startDate.toISOString(),
-            membership_end_date: endDate.toISOString()
+            membership_end_date: endDate.toISOString(),
+            plan_name: finalPlanName,
+            plan_type: finalPlanType,
+            duration_months: finalDuration,
+            price: finalPrice,
+            form_data: updatedFormData,
+            updated_at: new Date().toISOString()
         };
 
         // Clear grace period end if reactivating from grace period
@@ -306,6 +322,13 @@ export async function POST(
             updateData.trainer_period_end = trainerPeriodEnd.toISOString();
             updateData.trainer_addon = hasTrainerAddon;
         }
+
+        // Activate any pending addons for this membership upon approval
+        await supabaseAdmin
+            .from('membership_addons')
+            .update({ status: 'active', updated_at: new Date().toISOString() })
+            .eq('membership_id', membershipId)
+            .eq('status', 'pending');
 
         // Use conditional update to prevent race conditions - only update if still 'pending' or 'grace_period'
         const { error: updateError, data: updatedMembership } = await supabaseAdmin

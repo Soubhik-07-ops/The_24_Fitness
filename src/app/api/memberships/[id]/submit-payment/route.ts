@@ -14,6 +14,17 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     auth: { autoRefreshToken: false, persistSession: false }
 })
 
+export async function OPTIONS() {
+    return new NextResponse(null, {
+        status: 200,
+        headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+    });
+}
+
 export async function POST(
     request: NextRequest,
     context: { params: Promise<{ id: string }> }
@@ -26,7 +37,8 @@ export async function POST(
             paymentDate,
             amount,
             screenshotPath,
-            addons
+            addons,
+            newPlan
         } = body
 
         // Get user from session token
@@ -55,7 +67,7 @@ export async function POST(
         // Verify membership exists and belongs to user
         const { data: membership, error: membershipError } = await supabaseAdmin
             .from('memberships')
-            .select('id, user_id, status, plan_name, plan_type, duration_months, end_date, membership_end_date')
+            .select('id, user_id, status, plan_name, plan_type, duration_months, end_date, membership_end_date, price, form_data')
             .eq('id', membershipId)
             .single()
 
@@ -76,20 +88,26 @@ export async function POST(
         // Get current date
         const now = new Date();
         
-        // Check if membership has expired
+        // Check if membership has expired or is nearing expiration (within 15-day renewal window)
         const endDate = membership.membership_end_date || membership.end_date;
         const hasExpired = endDate ? new Date(endDate) <= now : false;
+        const diffMs = endDate ? new Date(endDate).getTime() - now.getTime() : 0;
+        const daysUntilExpiry = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
         
         // Validate membership status - allow payment submission for:
         // 1. 'awaiting_payment' (new purchase)
         // 2. 'grace_period' (renewal)
-        // 3. 'active' BUT expired (cron job might not have transitioned to grace_period yet)
+        // 3. 'expired' (reactivation beyond grace period)
+        // 4. 'active' if expired OR within 15 days of expiration (renewal window)
+        // 5. 'rejected' (allowing safe retry of payment)
         const isEligibleForRenewal = membership.status === 'grace_period' || 
-            (membership.status === 'active' && hasExpired);
+            membership.status === 'expired' ||
+            membership.status === 'rejected' ||
+            (membership.status === 'active' && (hasExpired || daysUntilExpiry <= 15));
         
         if (membership.status !== 'awaiting_payment' && !isEligibleForRenewal) {
             return NextResponse.json(
-                { error: `Cannot submit payment. Membership is in '${membership.status}' status. Payment can only be submitted when membership status is 'awaiting_payment' (new purchase) or 'grace_period' (renewal), or if membership has expired (for renewals).` },
+                { error: `Cannot submit payment. Membership is in '${membership.status}' status. Payment can only be submitted when membership status is 'awaiting_payment' (new purchase), 'grace_period' (renewal), 'expired' (reactivation), or within 15 days of expiration for active memberships.` },
                 { status: 400 }
             )
         }
@@ -112,25 +130,125 @@ export async function POST(
         }
 
         // Determine if this is a renewal payment
-        // This must be calculated BEFORE determining payment_purpose
-        const isRenewal = membership.status === 'grace_period' || (membership.status === 'active' && hasExpired);
+        const isRenewal = membership.status === 'grace_period' || 
+            membership.status === 'expired' ||
+            membership.status === 'rejected' ||
+            (membership.status === 'active' && (hasExpired || daysUntilExpiry <= 15));
 
-        // Determine payment purpose based on membership status
-        // This is the explicit intent set at payment creation time
         const paymentPurpose = isRenewal ? 'membership_renewal' : 'initial_purchase';
 
-        // Create payment record with explicit payment_purpose
+        // Authoritative Server-Side Price Validation
+        // 1. Determine user gender from profile
+        const { data: userProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('gender')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        const genderStr = (userProfile?.gender || '').toLowerCase();
+        const isFemale = genderStr === 'female' || genderStr === 'girls' || genderStr === 'girl' || genderStr === 'f';
+
+        // 2. Fetch authoritative fee settings from admin_settings
+        const { data: feeSettings } = await supabaseAdmin
+            .from('admin_settings')
+            .select('setting_key, setting_value')
+            .in('setting_key', ['in_gym_admission_fee', 'in_gym_monthly_fee', 'in_gym_female_fee', 'admission_fee', 'monthly_fee']);
+
+        const settingsMap: Record<string, number> = {};
+        feeSettings?.forEach((row: any) => {
+            if (row.setting_key) {
+                settingsMap[row.setting_key] = parseFloat(row.setting_value) || 0;
+            }
+        });
+
+        const authoritativeAdmissionFee = settingsMap['in_gym_admission_fee'] || settingsMap['admission_fee'] || 1200;
+        const authoritativeMonthlyFee = settingsMap['in_gym_monthly_fee'] || settingsMap['monthly_fee'] || 650;
+        const authoritativeFemaleFee = settingsMap['in_gym_female_fee'] || 700;
+
+        // 3. Determine target plan and duration
+        const targetPlanName = (newPlan?.planName || membership.plan_name || '').toLowerCase();
+        const targetPlanType = (newPlan?.planType || membership.plan_type || 'in_gym').toLowerCase();
+        let targetDuration = Number(newPlan?.durationMonths) || Number(membership.duration_months) || 1;
+        if (targetPlanName.includes('regular') || targetPlanName.includes('monthly')) targetDuration = 1;
+        else if (targetPlanName.includes('basic')) targetDuration = 3;
+        else if (targetPlanName.includes('premium')) targetDuration = 6;
+        else if (targetPlanName.includes('elite')) targetDuration = 12;
+
+        // 4. Calculate authoritative base plan price
+        let authoritativeBasePrice = 0;
+        let isRegularMonthly = false;
+
+        if (targetPlanName.includes('elite')) {
+            authoritativeBasePrice = isFemale ? 7800 : 6800;
+        } else if (targetPlanName.includes('premium')) {
+            authoritativeBasePrice = isFemale ? 4400 : 4000;
+        } else if (targetPlanName.includes('basic')) {
+            authoritativeBasePrice = isFemale ? 2400 : 2200;
+        } else if (targetPlanName.includes('regular') || targetPlanName.includes('monthly') || targetPlanType === 'in_gym') {
+            isRegularMonthly = true;
+            if (isRenewal) {
+                // Renewal of Regular Monthly: admission fee waived (male ₹650 / female ₹700)
+                authoritativeBasePrice = isFemale ? authoritativeFemaleFee : authoritativeMonthlyFee;
+            } else {
+                // Initial purchase of Regular Monthly: admission fee + 1st month
+                authoritativeBasePrice = authoritativeAdmissionFee + (isFemale ? authoritativeFemaleFee : authoritativeMonthlyFee);
+            }
+        } else {
+            // Fallback for custom tiers to existing recorded price
+            authoritativeBasePrice = Number(membership.price) || 0;
+        }
+
+        // 5. Calculate authoritative add-on pricing
+        // In-gym offline add-on price removed per specification
+        const authoritativeInGymPrice = 0;
+
+        let authoritativeTrainerPrice = 0;
+        let verifiedTrainerData: any = null;
+        if (addons?.personalTrainer && addons?.selectedTrainer) {
+            const { data: trainerData, error: trainerError } = await supabaseAdmin
+                .from('trainers')
+                .select('id, name, price, is_active')
+                .eq('id', addons.selectedTrainer)
+                .single();
+
+            if (trainerError || !trainerData || !trainerData.is_active) {
+                return NextResponse.json(
+                    { error: 'Selected personal trainer is invalid or inactive' },
+                    { status: 400 }
+                );
+            }
+
+            verifiedTrainerData = trainerData;
+            authoritativeTrainerPrice = Number(trainerData.price) || 0;
+        }
+
+        // 6. Validate client-supplied amount against authoritative total
+        const expectedTotal = authoritativeBasePrice + authoritativeInGymPrice + authoritativeTrainerPrice;
+        const submittedAmount = Number(amount);
+
+        if (isNaN(submittedAmount) || Math.abs(submittedAmount - expectedTotal) > 0.01) {
+            return NextResponse.json(
+                {
+                    error: `Invalid payment amount. Authoritative total is ₹${expectedTotal.toFixed(2)} (Base plan: ₹${authoritativeBasePrice}, In-Gym: ₹${authoritativeInGymPrice}, Trainer: ₹${authoritativeTrainerPrice}), but received ₹${amount}. Price tampering rejected.`,
+                    expectedTotal,
+                    receivedAmount: amount
+                },
+                { status: 400 }
+            );
+        }
+
+        // Create payment record with authoritative amount and explicit payment_purpose
         const { data: payment, error: paymentError } = await supabaseAdmin
             .from('membership_payments')
             .insert({
                 membership_id: membershipId,
                 transaction_id: transactionId,
                 payment_date: paymentDate,
-                amount: amount,
+                amount: expectedTotal,
                 payment_screenshot_url: screenshotPath,
                 payment_method: 'qr_code',
                 status: 'pending',
-                payment_purpose: paymentPurpose // Explicit intent: initial_purchase or membership_renewal
+                payment_purpose: paymentPurpose
             })
             .select()
             .single()
@@ -146,25 +264,33 @@ export async function POST(
         // Determine plan mode (Online or InGym)
         const planMode = membership.plan_type === 'in_gym' || addons?.inGym ? 'InGym' : 'Online'
 
-        // Update membership status based on current status
-        // For 'awaiting_payment' (new purchase): update to 'pending'
-        // For 'grace_period' (renewal): update to 'pending' (will be reactivated on approval)
-        // For 'active' but expired (demo mode): treat as renewal, update to 'pending'
-        // Note: isRenewal is already calculated above
+        // Prepare membership update:
+        // CRITICAL FOR SAFE REVERSAL & REJECTION SEMANTICS:
+        // Do NOT overwrite membership.plan_name, price, or duration before admin approval!
+        // Instead, store requested renewal plan in form_data.renewal_pending_plan.
+        const existingFormData = (typeof membership.form_data === 'object' && membership.form_data !== null) ? membership.form_data : {};
+        const updatedFormData = {
+            ...existingFormData,
+            ...(newPlan ? {
+                renewal_pending_plan: {
+                    planName: targetPlanName,
+                    planType: targetPlanType,
+                    durationMonths: targetDuration,
+                    price: authoritativeBasePrice,
+                    submittedAt: new Date().toISOString()
+                }
+            } : {})
+        };
+
         const updateData: any = {
             status: 'pending',
             plan_mode: planMode,
+            form_data: updatedFormData,
             updated_at: new Date().toISOString()
         };
 
-        // For grace period renewals or expired active memberships, we keep the membership record but mark it as pending
-        // The approval route will handle reactivation and date extension
-
         // Use conditional update to prevent race conditions
-        // Allow 'active' status if expired (for demo mode)
-        const statusCondition = isRenewal 
-            ? (membership.status === 'grace_period' ? 'grace_period' : 'active')
-            : 'awaiting_payment';
+        const statusCondition = membership.status;
         const { data: updatedMembership, error: updateError } = await supabaseAdmin
             .from('memberships')
             .update(updateData)
@@ -175,8 +301,7 @@ export async function POST(
 
         if (updateError || !updatedMembership) {
             console.error('Error updating membership status:', updateError)
-            // If status update fails, we have a payment but membership is in wrong state
-            // Try to clean up the payment to prevent orphan records
+            // Cleanup payment record on failure to prevent orphans
             await supabaseAdmin
                 .from('membership_payments')
                 .delete()
@@ -191,17 +316,14 @@ export async function POST(
 
         // Create add-ons if selected
         if (addons?.inGym) {
-            // In-gym admission fee (fetch from database)
-            const { getInGymAdmissionFee } = await import('@/lib/adminSettings');
-            const inGymPrice = await getInGymAdmissionFee();
-            logger.debug('Creating in-gym addon')
+            logger.debug('Creating in-gym addon with 0 price (fee removed)')
 
             const { data: inGymAddon, error: inGymError } = await supabaseAdmin
                 .from('membership_addons')
                 .insert({
                     membership_id: membershipId,
                     addon_type: 'in_gym',
-                    price: inGymPrice, // Ensure this is a number, not string
+                    price: 0, // In-gym offline addon price removed per specification
                     status: 'pending'
                 })
                 .select()

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, useInView } from 'framer-motion'
 import { Check, Star, ChevronLeft, ChevronRight, Users } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import styles from './MembershipPlans.module.css'
 
@@ -163,61 +163,364 @@ const regularGirlsPlan: Plan = {
 
 export default function MembershipPlans() {
     const router = useRouter()
+    const searchParams = useSearchParams()
     const ref = useRef<HTMLElement | null>(null)
     const onlineGridRef = useRef<HTMLDivElement>(null)
     const regularGridRef = useRef<HTMLDivElement>(null)
     const isInView = useInView(ref, { once: true, margin: '-100px' })
 
     const SWITCH_WIDTH = 1024
-    const [isSwipeable, setIsSwipeable] = useState(() => {
-        if (typeof window === 'undefined') return false
-        return window.innerWidth < SWITCH_WIDTH
-    })
+    const [isSwipeable, setIsSwipeable] = useState(false)
     const [activeOnlineIndex, setActiveOnlineIndex] = useState(0)
     const [activeRegularIndex, setActiveRegularIndex] = useState(0)
-    const [selectedGender, setSelectedGender] = useState<'boys' | 'girls'>('boys')
+    const hasUserManuallyToggledGender = useRef(false)
+
+    const [selectedGender, setSelectedGender] = useState<'boys' | 'girls'>(() => {
+        if (typeof window !== 'undefined') {
+            const urlG = new URLSearchParams(window.location.search).get('gender')?.toLowerCase()
+            if (urlG === 'girls' || urlG === 'female') return 'girls'
+            if (urlG === 'boys' || urlG === 'male') return 'boys'
+            const saved = sessionStorage.getItem('the24_selected_gender')
+            if (saved === 'girls' || saved === 'boys') return saved
+        }
+        return 'boys'
+    })
+    const [userMembership, setUserMembership] = useState<any>(null)
+    const [hasPendingPayment, setHasPendingPayment] = useState<boolean>(false)
+    const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true)
+    const [userGender, setUserGender] = useState<'boys' | 'girls'>('boys')
+    const [isMounted, setIsMounted] = useState<boolean>(false)
+
+    const handleGenderSelect = (gender: 'boys' | 'girls') => {
+        hasUserManuallyToggledGender.current = true
+        setSelectedGender(gender)
+        try {
+            sessionStorage.setItem('the24_selected_gender', gender)
+        } catch {}
+    }
 
     const currentPlans = selectedGender === 'boys' ? boysPlans : girlsPlans
     const regularPlans: Plan[] = [regularBoysPlan, regularGirlsPlan]
 
     useEffect(() => {
+        setIsMounted(true)
         const onResize = () => setIsSwipeable(window.innerWidth < SWITCH_WIDTH)
         onResize()
         window.addEventListener('resize', onResize)
+
+        // Read cached membership from sessionStorage immediately upon mounting
+        try {
+            const cached = sessionStorage.getItem('the24_user_membership')
+            if (cached) {
+                setUserMembership(JSON.parse(cached))
+                setIsAuthChecking(false)
+            }
+            if (sessionStorage.getItem('the24_has_pending_payment') === 'true') {
+                setHasPendingPayment(true)
+            }
+        } catch {}
+
         return () => window.removeEventListener('resize', onResize)
     }, [])
 
-    const handleSelectPlan = async (plan: Plan) => {
-        // Check if user is logged in first
-        const { data: { session } } = await supabase.auth.getSession()
+    // Load authenticated user's current membership & profile (parallelized & cached)
+    useEffect(() => {
+        let isMounted = true
+        const fetchUserMembership = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession()
+                if (!session?.user) {
+                    if (isMounted) {
+                        setUserMembership(null)
+                        setHasPendingPayment(false)
+                        setIsAuthChecking(false)
+                    }
+                    try {
+                        sessionStorage.removeItem('the24_user_membership')
+                        sessionStorage.removeItem('the24_has_pending_payment')
+                    } catch {}
+                    return
+                }
 
-        // For regular plans, use firstPayment; for others, use price
-        const planPrice = plan.firstPayment || plan.price
+                // Query profile & memberships concurrently with Promise.all to eliminate waterfall delay
+                const [profileRes, membershipsRes] = await Promise.all([
+                    supabase
+                        .from('profiles')
+                        .select('gender')
+                        .eq('id', session.user.id)
+                        .maybeSingle(),
+                    supabase
+                        .from('memberships')
+                        .select('*')
+                        .eq('user_id', session.user.id)
+                        .order('created_at', { ascending: false })
+                ])
 
-        // Create plan parameters
-        const params = new URLSearchParams({
-            planId: plan.id,
-            planType: plan.planType,
-            planName: plan.name,
-            price: planPrice.toString(),
-            duration: plan.duration,
-            gender: plan.gender || selectedGender
-        })
+                if (!isMounted) return
 
-        // Add monthlyFee for regular plans if available
-        if (plan.monthlyFee) {
-            params.set('monthlyFee', plan.monthlyFee.toString())
+                const memberships = membershipsRes.data
+                let detectedGender: 'boys' | 'girls' = 'boys'
+                if (profileRes.data?.gender) {
+                    const g = profileRes.data.gender.toLowerCase()
+                    detectedGender = (g === 'female' || g === 'girls' || g === 'f') ? 'girls' : 'boys'
+                } else if (memberships && memberships.length > 0) {
+                    const latestMem = memberships[0]
+                    const fg = (latestMem.form_data?.gender || '').toLowerCase()
+                    const pName = (latestMem.plan_name || '').toLowerCase()
+                    if (fg === 'female' || fg === 'girls' || fg === 'f' || pName.includes('girls') || pName.includes('girl') || [700, 1400, 2400, 4400, 7800].includes(latestMem.price)) {
+                        detectedGender = 'girls'
+                    }
+                } else if (session.user?.user_metadata?.gender) {
+                    const ug = (session.user.user_metadata.gender || '').toLowerCase()
+                    if (ug === 'female' || ug === 'girls' || ug === 'f') {
+                        detectedGender = 'girls'
+                    }
+                }
+                setUserGender(detectedGender)
+                if (!hasUserManuallyToggledGender.current) {
+                    const urlG = searchParams?.get('gender')?.toLowerCase()
+                    const saved = typeof window !== 'undefined' ? sessionStorage.getItem('the24_selected_gender') : null
+                    if (!urlG && !saved) {
+                        setSelectedGender(detectedGender)
+                    }
+                }
+                if (!membershipsRes.error && memberships && memberships.length > 0) {
+                    const currentSub = memberships.find(m => m.status === 'active' || m.status === 'approved')
+                        || memberships.find(m => m.status === 'grace_period')
+                        || memberships.find(m => m.status === 'pending')
+                        || memberships[0]
+
+                    setUserMembership(currentSub)
+                    try {
+                        sessionStorage.setItem('the24_user_membership', JSON.stringify(currentSub))
+                    } catch {}
+
+                    if (currentSub) {
+                        const { data: pendingPayments } = await supabase
+                            .from('membership_payments')
+                            .select('id')
+                            .eq('membership_id', currentSub.id)
+                            .eq('status', 'pending')
+                            .limit(1)
+
+                        if (isMounted && pendingPayments && pendingPayments.length > 0) {
+                            setHasPendingPayment(true)
+                            try { sessionStorage.setItem('the24_has_pending_payment', 'true') } catch {}
+                        } else if (isMounted) {
+                            setHasPendingPayment(false)
+                            try { sessionStorage.setItem('the24_has_pending_payment', 'false') } catch {}
+                        }
+                    }
+                } else if (isMounted) {
+                    setUserMembership(null)
+                    try { sessionStorage.removeItem('the24_user_membership') } catch {}
+                }
+            } catch (err) {
+                console.warn('[MembershipPlans] Error loading user membership:', err)
+            } finally {
+                if (isMounted) {
+                    setIsAuthChecking(false)
+                }
+            }
         }
 
-        if (!session) {
-            // User not logged in - redirect to signup with plan parameters preserved
-            const redirectUrl = `/membership/form?${params.toString()}`
-            router.push(`/signup?redirect=${encodeURIComponent(redirectUrl)}`)
+        void fetchUserMembership()
+        return () => { isMounted = false }
+    }, [])
+
+    // Identify if a plan card matches the member's current active membership
+    const isMatchingActivePlan = (plan: Plan): boolean => {
+        if (!userMembership) return false
+        if (userMembership.status !== 'active' && userMembership.status !== 'approved') return false
+
+        const memPlan = (userMembership.plan_name || '').toLowerCase()
+        const memType = (userMembership.plan_type || '').toLowerCase()
+
+        if (plan.planType === 'in_gym') {
+            const isMemRegular = memPlan.includes('regular') || memType === 'in_gym'
+            const matchesGender = !plan.gender || plan.gender === userGender
+            return isMemRegular && matchesGender
+        } else {
+            const planNameLower = plan.name.toLowerCase()
+            const matchesName = memPlan.includes(planNameLower)
+            const matchesGender = !plan.gender || plan.gender === userGender
+            return matchesName && matchesGender
+        }
+    }
+
+    // Server-authoritative eligibility computation
+    const getEligibility = () => {
+        if (!userMembership) {
+            return {
+                isRenewalEligible: false,
+                isGracePeriod: false,
+                isExpired: false,
+                isPending: false,
+                daysRemaining: 0
+            }
+        }
+
+        const now = new Date()
+        const endDateStr = userMembership.membership_end_date || userMembership.end_date
+        const endDate = endDateStr ? new Date(endDateStr) : now
+        const diffTime = endDate.getTime() - now.getTime()
+        const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+        const graceEndStr = userMembership.grace_period_end
+        const graceEnd = graceEndStr ? new Date(graceEndStr) : new Date(endDate.getTime() + 15 * 86400000)
+        const isInGrace = daysRemaining < 0 && now <= graceEnd
+        const isPastGrace = daysRemaining < 0 && now > graceEnd
+
+        const isPending = userMembership.status === 'pending' || hasPendingPayment
+        const isGrace = userMembership.status === 'grace_period' || isInGrace
+        const isExpired = userMembership.status === 'expired' || isPastGrace
+        const isRenewalEligible = (userMembership.status === 'active' && daysRemaining <= 15) || isGrace
+
+        return {
+            isRenewalEligible,
+            isGracePeriod: isGrace,
+            isExpired,
+            isPending,
+            daysRemaining
+        }
+    }
+
+    // Determine button label, styling, and action based on exact eligibility
+    const getButtonConfig = (plan: Plan) => {
+        if (!isMounted || !userMembership) {
+            if (!isMounted || isAuthChecking) {
+                return {
+                    text: 'Checking status...',
+                    disabled: true,
+                    className: styles.buttonDisabled,
+                    actionType: 'loading'
+                }
+            }
+            return {
+                text: 'Select Plan',
+                disabled: false,
+                className: plan.popular ? styles.buttonPopular : plan.name === 'Basic' ? styles.buttonBasic : styles.buttonElite,
+                actionType: 'initial'
+            }
+        }
+
+        const isCurrent = isMatchingActivePlan(plan)
+        const elig = getEligibility()
+
+        if (elig.isPending) {
+            return {
+                text: 'Renewal Pending Approval',
+                disabled: true,
+                className: styles.buttonDisabled,
+                actionType: 'pending'
+            }
+        }
+
+        if (isCurrent) {
+            if (elig.isExpired) {
+                return {
+                    text: 'Reactivate Plan',
+                    disabled: false,
+                    className: styles.buttonReactivate,
+                    actionType: 'reactivate'
+                }
+            }
+            if (elig.isGracePeriod) {
+                return {
+                    text: 'Renew Now (Grace Period)',
+                    disabled: false,
+                    className: styles.buttonRenew,
+                    actionType: 'renew'
+                }
+            }
+            if (elig.isRenewalEligible) {
+                return {
+                    text: 'Renew Now',
+                    disabled: false,
+                    className: styles.buttonRenew,
+                    actionType: 'renew'
+                }
+            }
+            // Active, not yet due for renewal (> 15 days)
+            return {
+                text: `Active Plan (${elig.daysRemaining}d left)`,
+                disabled: true,
+                className: styles.buttonDisabled,
+                actionType: 'active'
+            }
+        } else {
+            // Non-active plan card
+            if (elig.isExpired) {
+                return {
+                    text: 'Switch & Reactivate',
+                    disabled: false,
+                    className: styles.buttonSwitch,
+                    actionType: 'switch'
+                }
+            }
+            if (elig.isRenewalEligible) {
+                return {
+                    text: 'Switch & Renew',
+                    disabled: false,
+                    className: styles.buttonSwitch,
+                    actionType: 'switch'
+                }
+            }
+            return {
+                text: 'Current Plan Active',
+                disabled: true,
+                className: styles.buttonDisabled,
+                actionType: 'locked'
+            }
+        }
+    }
+
+    const handleSelectPlan = async (plan: Plan) => {
+        const btn = getButtonConfig(plan)
+        if (btn.disabled || btn.actionType === 'loading') return
+
+        const { data: { session } } = await supabase.auth.getSession()
+
+        // New member initial registration path (preserved completely)
+        if (!session || !userMembership) {
+            const planPrice = plan.firstPayment || plan.price
+            const params = new URLSearchParams({
+                planId: plan.id,
+                planType: plan.planType,
+                planName: plan.name,
+                price: planPrice.toString(),
+                duration: plan.duration,
+                gender: plan.gender || selectedGender
+            })
+            if (plan.monthlyFee) {
+                params.set('monthlyFee', plan.monthlyFee.toString())
+            }
+
+            if (!session) {
+                const redirectUrl = `/membership/form?${params.toString()}`
+                router.push(`/signup?redirect=${encodeURIComponent(redirectUrl)}`)
+                return
+            }
+
+            router.push(`/membership/form?${params.toString()}`)
             return
         }
 
-        // User is logged in - go directly to form
-        router.push(`/membership/form?${params.toString()}`)
+        // Direct renewal / reactivation / plan switch path (NO re-registration)
+        const renewalAmount = plan.monthlyFee || plan.price
+
+        const params = new URLSearchParams({
+            membershipId: userMembership.id.toString(),
+            renewalType: 'membership',
+            newPlanId: plan.id,
+            newPlanName: plan.name,
+            newPlanType: plan.planType,
+            newDuration: plan.duration,
+            newPrice: renewalAmount.toString(),
+            gender: plan.gender || selectedGender
+        })
+
+        router.push(`/membership/payment?${params.toString()}`)
     }
 
     // Reset active index when gender changes
@@ -398,14 +701,14 @@ export default function MembershipPlans() {
                 >
                     <button
                         className={`${styles.toggleButton} ${selectedGender === 'boys' ? styles.active : ''}`}
-                        onClick={() => setSelectedGender('boys')}
+                        onClick={() => handleGenderSelect('boys')}
                     >
                         <Users size={18} />
                         Boys Plans
                     </button>
                     <button
                         className={`${styles.toggleButton} ${selectedGender === 'girls' ? styles.active : ''}`}
-                        onClick={() => setSelectedGender('girls')}
+                        onClick={() => handleGenderSelect('girls')}
                     >
                         <Users size={18} />
                         Girls Plans
@@ -418,41 +721,51 @@ export default function MembershipPlans() {
                         ref={onlineGridRef}
                         className={`${styles.plansGrid} ${isSwipeable ? styles.swipeMode : styles.gridMode}`}
                     >
-                        {currentPlans.map((plan, idx) => (
-                            <article
-                                key={plan.id}
-                                className={`${styles.planCard} ${plan.popular ? styles.planCardPopular : ''}`}
-                            >
-                                {plan.popular && (
-                                    <div className={styles.popularBadge}>
-                                        <Star size={16} fill="currentColor" />
-                                        Most Popular
-                                    </div>
-                                )}
-                                <div className={styles.planHeader}>
-                                    <h3 className={styles.planName}>{plan.name}</h3>
-                                    <div className={styles.planPrice}>
-                                        <span className={styles.price}>₹{plan.price.toLocaleString()}</span>
-                                    </div>
-                                    <div className={styles.planDuration}>{plan.duration}</div>
-                                </div>
-                                <div className={styles.featuresList}>
-                                    {plan.features.map((f, i) => (
-                                        <div key={i} className={styles.featureItem}>
-                                            <Check size={18} className={styles.featureIcon} />
-                                            <span>{f}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                                <button
-                                    className={`${styles.getStartedButton} ${plan.popular ? styles.buttonPopular : plan.name === 'Basic' ? styles.buttonBasic : styles.buttonElite
-                                        }`}
-                                    onClick={() => handleSelectPlan(plan)}
+                        {currentPlans.map((plan, idx) => {
+                            const isCurrentActive = isMatchingActivePlan(plan)
+                            const btn = getButtonConfig(plan)
+                            return (
+                                <article
+                                    key={plan.id}
+                                    className={`${styles.planCard} ${plan.popular ? styles.planCardPopular : ''} ${isCurrentActive ? styles.planCardActive : ''}`}
                                 >
-                                    Select Plan
-                                </button>
-                            </article>
-                        ))}
+                                    {isCurrentActive ? (
+                                        <div className={styles.activeBadge}>
+                                            <Check size={16} />
+                                            Active Plan
+                                        </div>
+                                    ) : plan.popular ? (
+                                        <div className={styles.popularBadge}>
+                                            <Star size={16} fill="currentColor" />
+                                            Most Popular
+                                        </div>
+                                    ) : null}
+                                    <div className={styles.planHeader}>
+                                        <h3 className={styles.planName}>{plan.name}</h3>
+                                        <div className={styles.planPrice}>
+                                            <span className={styles.price}>₹{plan.price.toLocaleString()}</span>
+                                        </div>
+                                        <div className={styles.planDuration}>{plan.duration}</div>
+                                    </div>
+                                    <div className={styles.featuresList}>
+                                        {plan.features.map((f, i) => (
+                                            <div key={i} className={styles.featureItem}>
+                                                <Check size={18} className={styles.featureIcon} />
+                                                <span>{f}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button
+                                        suppressHydrationWarning
+                                        className={`${styles.getStartedButton} ${btn.className}`}
+                                        onClick={() => handleSelectPlan(plan)}
+                                        disabled={btn.disabled}
+                                    >
+                                        {btn.text}
+                                    </button>
+                                </article>
+                            )
+                        })}
                     </div>
                 </div>
 
@@ -503,45 +816,57 @@ export default function MembershipPlans() {
                             ref={regularGridRef}
                             className={`${styles.regularPlansGrid} ${isSwipeable ? styles.swipeMode : styles.regularGridMode}`}
                         >
-                            {regularPlans.map((plan) => (
-                                <article
-                                    key={plan.id}
-                                    className={`${styles.planCard} ${styles.regularPlanCard}`}
-                                >
-                                    {/* Gender tag to remove ambiguity */}
-                                    <div
-                                        className={`${styles.genderBadge} ${plan.gender === 'boys' ? styles.boysBadge : styles.girlsBadge}`}
+                            {regularPlans.map((plan) => {
+                                const isCurrentActive = isMatchingActivePlan(plan)
+                                const btn = getButtonConfig(plan)
+                                return (
+                                    <article
+                                        key={plan.id}
+                                        className={`${styles.planCard} ${styles.regularPlanCard} ${isCurrentActive ? styles.planCardActive : ''}`}
                                     >
-                                        {plan.gender === 'boys' ? 'For Boys' : 'For Girls'}
-                                    </div>
-                                    <div className={styles.planHeader}>
-                                        <h3 className={styles.planName}>{plan.name}</h3>
-                                        <div className={styles.planPrice}>
-                                            <span className={styles.price}>₹{plan.firstPayment?.toLocaleString()}</span>
+                                        {isCurrentActive && (
+                                            <div className={styles.activeBadge}>
+                                                <Check size={16} />
+                                                Active Plan
+                                            </div>
+                                        )}
+                                        {/* Gender tag to remove ambiguity */}
+                                        <div
+                                            className={`${styles.genderBadge} ${plan.gender === 'boys' ? styles.boysBadge : styles.girlsBadge}`}
+                                        >
+                                            {plan.gender === 'boys' ? 'For Boys' : 'For Girls'}
                                         </div>
-                                        <div className={styles.planDuration}>
-                                            <div style={{ marginBottom: '0.5rem' }}>First Payment (Joining)</div>
-                                            <div style={{ fontSize: '0.85rem', color: '#10b981', marginTop: '0.5rem' }}>
-                                                From 2nd Month: ₹{plan.monthlyFee?.toLocaleString()}/month
+                                        <div className={styles.planHeader}>
+                                            <h3 className={styles.planName}>{plan.name}</h3>
+                                            <div className={styles.planPrice}>
+                                                <span className={styles.price}>₹{plan.firstPayment?.toLocaleString()}</span>
+                                            </div>
+                                            <div className={styles.planDuration}>
+                                                <div style={{ marginBottom: '0.5rem' }}>First Payment (Joining)</div>
+                                                <div style={{ fontSize: '0.85rem', color: '#10b981', marginTop: '0.5rem' }}>
+                                                    From 2nd Month: ₹{plan.monthlyFee?.toLocaleString()}/month
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                    <div className={styles.featuresList}>
-                                        {plan.features.map((f, i) => (
-                                            <div key={i} className={styles.featureItem}>
-                                                <Check size={18} className={styles.featureIcon} />
-                                                <span>{f}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <button
-                                        className={`${styles.getStartedButton} ${plan.popular ? styles.buttonPopular : styles.buttonBasic}`}
-                                        onClick={() => handleSelectPlan(plan)}
-                                    >
-                                        Select Plan
-                                    </button>
-                                </article>
-                            ))}
+                                        <div className={styles.featuresList}>
+                                            {plan.features.map((f, i) => (
+                                                <div key={i} className={styles.featureItem}>
+                                                    <Check size={18} className={styles.featureIcon} />
+                                                    <span>{f}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button
+                                            suppressHydrationWarning
+                                            className={`${styles.getStartedButton} ${btn.className}`}
+                                            onClick={() => handleSelectPlan(plan)}
+                                            disabled={btn.disabled}
+                                        >
+                                            {btn.text}
+                                        </button>
+                                    </article>
+                                )
+                            })}
                         </div>
                     </div>
 

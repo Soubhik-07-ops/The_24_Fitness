@@ -9,27 +9,41 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
     auth: { autoRefreshToken: false, persistSession: false }
 });
 
-// GET - Fetch payment QR code URL (public access for users)
+// GET - Fetch payment QR code URL, UPI ID and payment instructions (public access for users)
 export async function GET() {
     try {
         const { data, error } = await supabaseAdmin
             .from('admin_settings')
-            .select('setting_value')
-            .eq('setting_key', 'payment_qr_code_url')
-            .single();
+            .select('setting_key, setting_value')
+            .in('setting_key', ['payment_qr_code_url', 'upi_id', 'upi_merchant_name', 'upi_qr_notice']);
 
-        if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        if (error) {
             throw error;
         }
 
+        const settingsMap: Record<string, string> = {};
+        data?.forEach((row: any) => {
+            if (row.setting_key) {
+                settingsMap[row.setting_key] = row.setting_value ?? '';
+            }
+        });
+
+        const qrCodeUrl = settingsMap['payment_qr_code_url']?.trim() || null;
+        const upiId = settingsMap['upi_id']?.trim() || null;
+        const upiMerchantName = settingsMap['upi_merchant_name']?.trim() || null;
+        const instructions = settingsMap['upi_qr_notice']?.trim() || null;
+
         return NextResponse.json({
             success: true,
-            qrCodeUrl: data?.setting_value || null
+            qrCodeUrl,
+            upiId,
+            upiMerchantName,
+            instructions
         });
     } catch (error: any) {
-        console.error('Error fetching payment QR code:', error);
+        console.error('Error fetching payment configuration:', error);
         return NextResponse.json(
-            { error: error.message || 'Failed to fetch QR code' },
+            { error: error.message || 'Failed to fetch payment configuration' },
             { status: 500 }
         );
     }

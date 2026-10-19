@@ -10,7 +10,6 @@
  * - These are mutually exclusive eligibility checks
  */
 
-import { isInGracePeriod } from './gracePeriod';
 import { checkTrainerRenewalEligibility } from './trainerRenewalEligibility';
 import { isTrainerInGracePeriod } from './trainerGracePeriod';
 
@@ -35,7 +34,11 @@ export interface RenewalEligibilityStatus {
 
 /**
  * Check membership renewal eligibility
- * Eligible ONLY when status === 'grace_period' (membership expired and in grace period)
+ * Authoritative boundary conditions:
+ * 1. Active membership within 15-day renewal window (daysRemaining <= 15 or already past expiry)
+ * 2. In grace period (status === 'grace_period' or within 5 days past expiry)
+ * 3. Expired membership (status === 'expired' or > 5 days past expiry - reactivation renewal)
+ * 4. Rejected payment retry (status === 'rejected')
  */
 export function checkMembershipRenewalEligibility(
     membershipStatus: string,
@@ -43,44 +46,87 @@ export function checkMembershipRenewalEligibility(
     gracePeriodEnd: Date | string | null,
     currentDate: Date = new Date()
 ): MembershipRenewalEligibility {
-    // CRITICAL: Only eligible if status is explicitly 'grace_period'
-    if (membershipStatus !== 'grace_period') {
+    const status = (membershipStatus || '').toLowerCase();
+
+    // Not eligible for new purchases awaiting payment or pending verification
+    if (status === 'awaiting_payment' || status === 'pending') {
         return {
             isEligible: false,
-            reason: `Membership status is '${membershipStatus}'. Membership renewal is only available during grace period (status: 'grace_period').`
+            reason: `Membership is in '${membershipStatus}' status. Payment is either awaiting initial submission or pending admin verification.`
         };
     }
 
-    // Must have valid grace period end date
-    if (!gracePeriodEnd) {
+    const endDate = membershipEndDate
+        ? (typeof membershipEndDate === 'string' ? new Date(membershipEndDate) : membershipEndDate)
+        : null;
+
+    const daysRemaining = endDate
+        ? Math.ceil((endDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+
+    // 1. Grace period state
+    if (status === 'grace_period') {
+        let graceDaysRemaining = 0;
+        if (gracePeriodEnd) {
+            const graceEnd = typeof gracePeriodEnd === 'string' ? new Date(gracePeriodEnd) : gracePeriodEnd;
+            if (currentDate > graceEnd) {
+                return {
+                    isEligible: false,
+                    reason: 'Grace period has ended. Membership can no longer be renewed.'
+                };
+            }
+            graceDaysRemaining = Math.max(0, Math.ceil((graceEnd.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)));
+        } else if (endDate) {
+            // Default 5-day grace window
+            const defaultGraceEnd = new Date(endDate.getTime() + 5 * 24 * 60 * 60 * 1000);
+            if (currentDate > defaultGraceEnd) {
+                return {
+                    isEligible: false,
+                    reason: 'Grace period has ended. Membership can no longer be renewed.'
+                };
+            }
+            graceDaysRemaining = Math.max(0, Math.ceil((defaultGraceEnd.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)));
+        }
+
         return {
-            isEligible: false,
-            reason: 'Grace period end date is missing. Cannot determine membership renewal eligibility.'
+            isEligible: true,
+            gracePeriodDaysRemaining: graceDaysRemaining
         };
     }
 
-    // Check if still within grace period
-    const graceEnd = typeof gracePeriodEnd === 'string' ? new Date(gracePeriodEnd) : gracePeriodEnd;
-    const endDate = typeof membershipEndDate === 'string'
-        ? new Date(membershipEndDate)
-        : (membershipEndDate || new Date());
-
-    const isInGrace = isInGracePeriod(endDate, gracePeriodEnd, currentDate);
-
-    if (!isInGrace) {
+    // 2. Active membership within 15-day pre-expiry window
+    if (status === 'active') {
+        if (!endDate || daysRemaining <= 15) {
+            return {
+                isEligible: true,
+                gracePeriodDaysRemaining: null
+            };
+        }
         return {
             isEligible: false,
-            reason: 'Grace period has ended. Membership can no longer be renewed.'
+            reason: `Membership is active with ${daysRemaining} days remaining. Early renewal opens 15 days before expiration.`
         };
     }
 
-    // Calculate days remaining
-    const diffTime = graceEnd.getTime() - currentDate.getTime();
-    const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // 3. Expired membership (outside grace period)
+    if (status === 'expired') {
+        return {
+            isEligible: false,
+            reason: `Membership status is 'expired'. Grace period has ended. Membership must be reactivated.`
+        };
+    }
+
+    // 4. Rejected payment retry
+    if (status === 'rejected') {
+        return {
+            isEligible: true,
+            gracePeriodDaysRemaining: null
+        };
+    }
 
     return {
-        isEligible: true,
-        gracePeriodDaysRemaining: Math.max(0, daysRemaining)
+        isEligible: false,
+        reason: `Membership in status '${membershipStatus}' is not eligible for renewal.`
     };
 }
 
