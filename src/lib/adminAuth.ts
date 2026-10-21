@@ -80,6 +80,76 @@ export async function createAdminSession(adminId: string): Promise<string> {
 }
 
 /**
+ * Extracts admin token from request:
+ * 1. Authorization: Bearer <token>
+ * 2. x-admin-token: <token>
+ * 3. Cookie: admin_token=<token>
+ * 4. URL query: ?admin_token=<token>
+ */
+export function getAdminTokenFromRequest(request: any): string | null {
+    if (!request) return null;
+
+    // 1. Authorization header: Bearer <token>
+    try {
+        const authHeader = request.headers?.get
+            ? (request.headers.get('authorization') || request.headers.get('Authorization'))
+            : null;
+        if (authHeader) {
+            const parts = authHeader.split(' ');
+            if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+                const t = parts[1].trim();
+                if (t) return t;
+            }
+            if (parts.length === 1 && parts[0].trim()) {
+                return parts[0].trim();
+            }
+        }
+    } catch {}
+
+    // 2. Custom header: x-admin-token
+    try {
+        const customHeader = request.headers?.get ? request.headers.get('x-admin-token') : null;
+        if (customHeader && customHeader.trim()) {
+            return customHeader.trim();
+        }
+    } catch {}
+
+    // 3. Cookie from NextRequest: request.cookies.get('admin_token')
+    try {
+        if (request.cookies?.get) {
+            const cookieVal = request.cookies.get('admin_token')?.value;
+            if (cookieVal && cookieVal.trim()) {
+                return cookieVal.trim();
+            }
+        }
+    } catch {}
+
+    // 4. Raw cookie header fallback
+    try {
+        const rawCookies = request.headers?.get ? request.headers.get('cookie') : null;
+        if (rawCookies) {
+            const match = rawCookies.match(/(?:^|;\s*)admin_token=([^;]+)/);
+            if (match && match[1]) {
+                return decodeURIComponent(match[1].trim());
+            }
+        }
+    } catch {}
+
+    // 5. URL query parameter fallback
+    try {
+        if (request.url) {
+            const url = new URL(request.url);
+            const queryToken = url.searchParams.get('admin_token');
+            if (queryToken && queryToken.trim()) {
+                return queryToken.trim();
+            }
+        }
+    } catch {}
+
+    return null;
+}
+
+/**
  * Validate admin session
  */
 export async function validateAdminSession(token: string): Promise<Admin | null> {

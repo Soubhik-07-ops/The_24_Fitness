@@ -4,11 +4,11 @@
 // ============================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { validateAdminSession } from '@/lib/adminAuth';
+import { validateAdminSession, getAdminTokenFromRequest } from '@/lib/adminAuth';
 
 export async function GET(request: NextRequest) {
     try {
-        const token = request.cookies.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
 
         if (!token) {
             return NextResponse.json(
