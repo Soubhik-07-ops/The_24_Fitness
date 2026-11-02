@@ -43,7 +43,7 @@ function PaymentPageContent() {
     const [trainers, setTrainers] = useState<Trainer[]>([])
     // In-gym admission fee (fetch from database)
     const [inGymAdmissionFee, setInGymAdmissionFee] = useState(1200)
-    const [inGymMonthlyFee, setInGymMonthlyFee] = useState(650)
+    const [inGymMonthlyFee, setInGymMonthlyFee] = useState(800)
 
     const [addons, setAddons] = useState({
         inGym: false,
@@ -116,10 +116,10 @@ function PaymentPageContent() {
 
                 // Parse fees
                 let currentAdmissionFee = 1200
-                let currentMonthlyFee = 650
+                let currentMonthlyFee = 800
                 if (feesRes.status === 'fulfilled' && feesRes.value?.success && feesRes.value.fees) {
                     currentAdmissionFee = feesRes.value.fees.admissionFee || 1200
-                    currentMonthlyFee = feesRes.value.fees.monthlyFee || 650
+                    currentMonthlyFee = feesRes.value.fees.monthlyFee || 800
                     setInGymAdmissionFee(currentAdmissionFee)
                     setInGymMonthlyFee(currentMonthlyFee)
                 }
@@ -203,7 +203,7 @@ function PaymentPageContent() {
 
                 const targetPlan = (newPlanName || membershipData.plan_name || '').toLowerCase()
                 if (targetPlan.includes('elite')) {
-                    renewalAmount = isFemale ? 7800 : 6800
+                    renewalAmount = 8800
                     initialPlan = {
                         key: 'elite',
                         name: 'Elite',
@@ -213,7 +213,7 @@ function PaymentPageContent() {
                         price: renewalAmount
                     }
                 } else if (targetPlan.includes('premium')) {
-                    renewalAmount = isFemale ? 4400 : 4000
+                    renewalAmount = 4500
                     initialPlan = {
                         key: 'premium',
                         name: 'Premium',
@@ -223,7 +223,7 @@ function PaymentPageContent() {
                         price: renewalAmount
                     }
                 } else if (targetPlan.includes('basic')) {
-                    renewalAmount = isFemale ? 2400 : 2200
+                    renewalAmount = 2500
                     initialPlan = {
                         key: 'basic',
                         name: 'Basic',
@@ -233,7 +233,7 @@ function PaymentPageContent() {
                         price: renewalAmount
                     }
                 } else {
-                    renewalAmount = isFemale ? 700 : (currentMonthlyFee || 650)
+                    renewalAmount = currentMonthlyFee || 800
                     initialPlan = {
                         key: 'regular',
                         name: 'Regular Monthly',
@@ -476,7 +476,7 @@ function PaymentPageContent() {
             planType: 'in_gym' as const,
             duration: '1 Month',
             durationMonths: 1,
-            price: isFemale ? 700 : inGymMonthlyFee
+            price: inGymMonthlyFee || 800
         },
         {
             key: 'basic',
@@ -484,7 +484,7 @@ function PaymentPageContent() {
             planType: 'online' as const,
             duration: '3 Months',
             durationMonths: 3,
-            price: isFemale ? 2400 : 2200
+            price: 2500
         },
         {
             key: 'premium',
@@ -492,7 +492,7 @@ function PaymentPageContent() {
             planType: 'online' as const,
             duration: '6 Months',
             durationMonths: 6,
-            price: isFemale ? 4400 : 4000
+            price: 4500
         },
         {
             key: 'elite',
@@ -500,7 +500,7 @@ function PaymentPageContent() {
             planType: 'online' as const,
             duration: '12 Months',
             durationMonths: 12,
-            price: isFemale ? 7800 : 6800
+            price: 8800
         }
     ]
 
@@ -510,13 +510,13 @@ function PaymentPageContent() {
         if (selectedRenewalPlan) {
             let updatedPrice = selectedRenewalPlan.price
             if (selectedRenewalPlan.key === 'elite') {
-                updatedPrice = female ? 7800 : 6800
+                updatedPrice = 8800
             } else if (selectedRenewalPlan.key === 'premium') {
-                updatedPrice = female ? 4400 : 4000
+                updatedPrice = 4500
             } else if (selectedRenewalPlan.key === 'basic') {
-                updatedPrice = female ? 2400 : 2200
+                updatedPrice = 2500
             } else {
-                updatedPrice = female ? 700 : inGymMonthlyFee
+                updatedPrice = inGymMonthlyFee || 800
             }
             setSelectedRenewalPlan(prev => prev ? ({
                 ...prev,

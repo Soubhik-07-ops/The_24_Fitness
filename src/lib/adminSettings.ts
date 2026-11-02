@@ -45,7 +45,7 @@ export async function getInGymAdmissionFee(): Promise<number> {
         if (settingValue) {
             const fee = parseFloat(settingValue);
             if (!isNaN(fee) && fee > 0) {
-                return fee;
+                return fee < 800 ? 800 : fee;
             }
         }
 
@@ -72,7 +72,7 @@ export async function getInGymAdmissionFee(): Promise<number> {
 
 /**
  * Get in-gym monthly fee from database (from admin_settings)
- * @returns Monthly fee amount (default: 650)
+ * @returns Monthly fee amount (default: 800)
  */
 export async function getInGymMonthlyFee(): Promise<number> {
     try {
@@ -83,10 +83,10 @@ export async function getInGymMonthlyFee(): Promise<number> {
                 return fee;
             }
         }
-        return 650;
+        return 800;
     } catch (error) {
         console.error('Error fetching in-gym monthly fee:', error);
-        return 650;
+        return 800;
     }
 }
 

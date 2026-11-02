@@ -70,10 +70,8 @@ function calculateExpectedRenewalPrice(
     // The renewal price is usually storedPrice * 0.54 (approximate ratio)
     // This works dynamically for any price without hardcoding
     if (planNameLower.includes('regular') && planType === 'in_gym') {
-        // Dynamic calculation: Regular monthly renewal is typically ~54% of initial price
-        // This ratio works for both boys (₹1200 → ₹650) and girls (₹1400 → ₹700)
-        // If prices change in future, this ratio will still work
-        const renewalRatio = 0.54; // Approximately 650/1200 or 700/1400
+        // Dynamic calculation: Regular monthly renewal is ₹800 vs ₹1,200 initial (fees + admission)
+        const renewalRatio = 0.67; // 800 / 1200 (~67%)
         const calculatedRenewal = Math.round(storedPrice * renewalRatio);
 
         // Ensure minimum reasonable price (at least ₹500)

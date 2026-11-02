@@ -16,7 +16,7 @@ function RenewMembershipContent() {
     const searchParams = useSearchParams()
     const [loading, setLoading] = useState(true)
     const [membership, setMembership] = useState<any>(null)
-    const [renewalPrice, setRenewalPrice] = useState<number>(0) // Renewal price (650 for boys, 700 for girls for regular monthly)
+    const [renewalPrice, setRenewalPrice] = useState<number>(0) // Renewal price (800 for regular monthly)
     const { toast, toastType, showToast, hideToast } = useToast()
 
     const membershipId = searchParams.get('membershipId')
@@ -107,14 +107,14 @@ function RenewMembershipContent() {
                 let finalRenewalPrice = membershipData.price
 
                 if (planNameLower.includes('elite')) {
-                    finalRenewalPrice = isFemale ? 7800 : 6800
+                    finalRenewalPrice = 8800
                 } else if (planNameLower.includes('premium')) {
-                    finalRenewalPrice = isFemale ? 4400 : 4000
+                    finalRenewalPrice = 4500
                 } else if (planNameLower.includes('basic')) {
-                    finalRenewalPrice = isFemale ? 2400 : 2200
+                    finalRenewalPrice = 2500
                 } else {
                     // Regular Monthly
-                    finalRenewalPrice = isFemale ? 700 : 650
+                    finalRenewalPrice = 800
                 }
 
                 console.log('[RENEWAL] Plan:', planNameLower, 'Gender:', determinedGender, 'Price:', finalRenewalPrice)

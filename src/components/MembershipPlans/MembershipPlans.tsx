@@ -25,7 +25,7 @@ const boysPlans: Plan[] = [
         id: 'boys_basic',
         name: 'Basic',
         planType: 'online',
-        price: 2200,
+        price: 2500,
         duration: '3 Months',
         gender: 'boys',
         features: [
@@ -39,7 +39,7 @@ const boysPlans: Plan[] = [
         id: 'boys_premium',
         name: 'Premium',
         planType: 'online',
-        price: 4000,
+        price: 4500,
         duration: '6 Months',
         gender: 'boys',
         features: [
@@ -56,7 +56,7 @@ const boysPlans: Plan[] = [
         id: 'boys_elite',
         name: 'Elite',
         planType: 'online',
-        price: 6800,
+        price: 8800,
         duration: '12 Months',
         gender: 'boys',
         features: [
@@ -76,7 +76,7 @@ const girlsPlans: Plan[] = [
         id: 'girls_basic',
         name: 'Basic',
         planType: 'online',
-        price: 2400,
+        price: 2500,
         duration: '3 Months',
         gender: 'girls',
         features: [
@@ -90,7 +90,7 @@ const girlsPlans: Plan[] = [
         id: 'girls_premium',
         name: 'Premium',
         planType: 'online',
-        price: 4400,
+        price: 4500,
         duration: '6 Months',
         gender: 'girls',
         features: [
@@ -107,7 +107,7 @@ const girlsPlans: Plan[] = [
         id: 'girls_elite',
         name: 'Elite',
         planType: 'online',
-        price: 7800,
+        price: 8800,
         duration: '12 Months',
         gender: 'girls',
         features: [
@@ -129,7 +129,7 @@ const regularBoysPlan: Plan = {
     planType: 'in_gym',
     price: 1200, // First payment: includes 1 month + admission
     firstPayment: 1200,
-    monthlyFee: 650,
+    monthlyFee: 800,
     duration: 'Monthly',
     gender: 'boys',
     features: [
@@ -146,9 +146,9 @@ const regularGirlsPlan: Plan = {
     id: 'regular_girls_monthly',
     name: 'Regular Monthly',
     planType: 'in_gym',
-    price: 1400, // First payment: includes 1 month + admission
-    firstPayment: 1400,
-    monthlyFee: 700,
+    price: 1200, // First payment: includes 1 month + admission
+    firstPayment: 1200,
+    monthlyFee: 800,
     duration: 'Monthly',
     gender: 'girls',
     features: [

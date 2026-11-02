@@ -162,8 +162,10 @@ export async function POST(
         });
 
         const authoritativeAdmissionFee = settingsMap['in_gym_admission_fee'] || settingsMap['admission_fee'] || 1200;
-        const authoritativeMonthlyFee = settingsMap['in_gym_monthly_fee'] || settingsMap['monthly_fee'] || 650;
-        const authoritativeFemaleFee = settingsMap['in_gym_female_fee'] || 700;
+        const rawMonthly = settingsMap['in_gym_monthly_fee'] || settingsMap['monthly_fee'] || 0;
+        const authoritativeMonthlyFee = rawMonthly >= 800 ? rawMonthly : 800;
+        const rawFemale = settingsMap['in_gym_female_fee'] || 0;
+        const authoritativeFemaleFee = rawFemale >= 800 ? rawFemale : 800;
 
         // 3. Determine target plan and duration dynamically from newPlan or body
         const targetPlanCode = (newPlan?.code || newPlan?.planCode || body.planCode || '').toUpperCase();
@@ -190,19 +192,19 @@ export async function POST(
         let isRegularMonthly = false;
 
         if (targetPlanCode === 'ELITE' || targetPlanName.includes('elite')) {
-            authoritativeBasePrice = isFemale ? 7800 : 6800;
+            authoritativeBasePrice = 8800;
         } else if (targetPlanCode === 'PREMIUM' || targetPlanName.includes('premium')) {
-            authoritativeBasePrice = isFemale ? 4400 : 4000;
+            authoritativeBasePrice = 4500;
         } else if (targetPlanCode === 'BASIC' || targetPlanName.includes('basic')) {
-            authoritativeBasePrice = isFemale ? 2400 : 2200;
+            authoritativeBasePrice = 2500;
         } else if (targetPlanCode === 'REGULAR_MONTHLY' || targetPlanName.includes('regular') || targetPlanName.includes('monthly') || targetPlanType === 'in_gym') {
             isRegularMonthly = true;
             if (isRenewal) {
-                // Renewal of Regular Monthly: admission fee waived (male ₹650 / female ₹700)
+                // Renewal of Regular Monthly: admission fee waived (₹800 for both boys & girls)
                 authoritativeBasePrice = isFemale ? authoritativeFemaleFee : authoritativeMonthlyFee;
             } else {
                 // Initial purchase of Regular Monthly: admission fee + 1st month
-                authoritativeBasePrice = authoritativeAdmissionFee + (isFemale ? authoritativeFemaleFee : authoritativeMonthlyFee);
+                authoritativeBasePrice = authoritativeAdmissionFee || 1200;
             }
         } else {
             // Fallback for custom tiers to existing recorded price

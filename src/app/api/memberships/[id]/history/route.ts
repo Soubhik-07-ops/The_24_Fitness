@@ -349,7 +349,7 @@ export async function GET(
                     if (admissionFee < 0) admissionFee = 0;
                     admissionFeeStatus = payment.status; // Use current payment status
                 } else {
-                    // Renewal payment: plan price + monthly fee (₹650)
+                    // Renewal payment: plan price + monthly fee (₹800)
                     // Calculate monthly fee from payment amount
                     monthlyFee = paymentAmount - planPrice;
                     // If calculated fee is close to standard monthly fee, use standard

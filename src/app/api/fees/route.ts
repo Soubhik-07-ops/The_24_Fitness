@@ -22,7 +22,7 @@ export async function GET() {
                 error: error.message || 'Failed to fetch fees',
                 fees: {
                     admissionFee: 1200, // Fallback
-                    monthlyFee: 650 // Fallback
+                    monthlyFee: 800 // Fallback
                 }
             },
             { status: 500 }
