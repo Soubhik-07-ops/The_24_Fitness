@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession } from '@/lib/trainerAuth';
-import { cookies } from 'next/headers';
+import { getTrainerFromRequest } from '@/lib/trainerAuth';
+import { checkTrainerMessagingAccess } from '@/lib/trainerMessagingAccess';
 import { logger } from '@/lib/logger';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -17,19 +17,42 @@ export async function GET(
     context: { params: Promise<{ userId: string }> }
 ) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('trainer_token')?.value;
-
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or session expired' }, { status: 401 });
         }
 
         const { userId } = await context.params;
+
+        // Verify that this trainer is authorized to access this client's conversation
+        const { data: membershipData, error: memErr } = await supabaseAdmin
+            .from('memberships')
+            .select('id, trainer_id, trainer_assigned')
+            .eq('user_id', userId)
+            .eq('trainer_id', trainer.id)
+            .limit(1)
+            .maybeSingle();
+
+        if (memErr) {
+            logger.error('Error verifying membership for trainer message GET:', memErr);
+            return NextResponse.json({ error: 'Failed to verify client assignment' }, { status: 500 });
+        }
+
+        if (!membershipData) {
+            // Check if there are any existing messages between trainer and user (historical access)
+            const { count: msgCount } = await supabaseAdmin
+                .from('trainer_messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('trainer_id', trainer.id)
+                .eq('user_id', userId);
+
+            if (!msgCount || msgCount === 0) {
+                return NextResponse.json(
+                    { error: 'Unauthorized: Client is not assigned to you.', messages: [] },
+                    { status: 403 }
+                );
+            }
+        }
 
         const { data: messages, error } = await supabaseAdmin
             .from('trainer_messages')
@@ -48,7 +71,6 @@ export async function GET(
             .eq('user_id', userId)
             .eq('is_trainer', false)
             .is('read_at', null);
-
 
         // Get user profile info
         let userName = 'Client';
@@ -105,16 +127,9 @@ export async function POST(
     context: { params: Promise<{ userId: string }> }
 ) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('trainer_token')?.value;
-
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or session expired' }, { status: 401 });
         }
 
         const { userId } = await context.params;
@@ -124,6 +139,44 @@ export async function POST(
 
         if (!content) {
             return NextResponse.json({ error: 'Content required' }, { status: 400 });
+        }
+
+        // Authoritatively check assignment and active messaging eligibility
+        const { data: membershipData, error: memErr } = await supabaseAdmin
+            .from('memberships')
+            .select('id, trainer_id, trainer_assigned, trainer_period_end, trainer_grace_period_end, membership_end_date, end_date, plan_name, status')
+            .eq('user_id', userId)
+            .eq('trainer_id', trainer.id)
+            .eq('trainer_assigned', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (memErr) {
+            logger.error('Error verifying membership for trainer message:', memErr);
+            return NextResponse.json({ error: 'Failed to verify client assignment' }, { status: 500 });
+        }
+
+        if (!membershipData) {
+            return NextResponse.json(
+                { error: 'Unauthorized: Client is not assigned to you.' },
+                { status: 403 }
+            );
+        }
+
+        const accessStatus = checkTrainerMessagingAccess(
+            membershipData.trainer_period_end,
+            membershipData.trainer_grace_period_end,
+            undefined,
+            membershipData.membership_end_date || membershipData.end_date || null,
+            membershipData.plan_name
+        );
+
+        if (!accessStatus.canMessage) {
+            return NextResponse.json(
+                { error: accessStatus.reason || 'Unauthorized: Client messaging access is expired or inactive.' },
+                { status: 403 }
+            );
         }
 
         // Insert message
@@ -164,16 +217,30 @@ export async function POST(
             });
             await notifyChannel.unsubscribe();
 
-            // Also broadcast to user's message channel for real-time update in chat window
-            const messageChannel = supabaseAdmin.channel(`trainer_messages_user_${trainer.id}_${userId}`);
-            await messageChannel.subscribe();
-            await new Promise(resolve => setTimeout(resolve, 100));
-            await messageChannel.send({
+            // Broadcast to both channel naming variants (with and without user_ infix)
+            const payload = { by: 'trainer', message };
+            const ch1 = supabaseAdmin.channel(`trainer_messages_user_${trainer.id}_${userId}`);
+            await ch1.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await ch1.send({ type: 'broadcast', event: 'new_message', payload });
+            await ch1.unsubscribe();
+
+            const ch2 = supabaseAdmin.channel(`trainer_messages_${trainer.id}_${userId}`);
+            await ch2.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await ch2.send({ type: 'broadcast', event: 'new_message', payload });
+            await ch2.unsubscribe();
+
+            // Broadcast to conversation list channel for live preview & ordering updates
+            const listCh = supabaseAdmin.channel('trainer_messages_realtime');
+            await listCh.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await listCh.send({
                 type: 'broadcast',
-                event: 'new_message',
-                payload: { by: 'trainer' }
+                event: 'conversation_updated',
+                payload: { userId, trainerId: trainer.id, message }
             });
-            await messageChannel.unsubscribe();
+            await listCh.unsubscribe();
         } catch (broadcastErr) {
             logger.error('Error sending broadcast notification:', broadcastErr);
         }
@@ -194,19 +261,23 @@ export async function DELETE(
     context: { params: Promise<{ userId: string }> }
 ) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('trainer_token')?.value;
-
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or session expired' }, { status: 401 });
         }
 
         const { userId } = await context.params;
+
+        // Verify trainer is authorized for this user
+        const { count: msgCount } = await supabaseAdmin
+            .from('trainer_messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('trainer_id', trainer.id)
+            .eq('user_id', userId);
+
+        if (!msgCount || msgCount === 0) {
+            return NextResponse.json({ error: 'Conversation not found or not authorized' }, { status: 404 });
+        }
 
         // Delete all messages between this trainer and user
         const { error: deleteError } = await supabaseAdmin
@@ -220,19 +291,32 @@ export async function DELETE(
             return NextResponse.json({ error: 'Failed to delete conversation' }, { status: 500 });
         }
 
-        // Send broadcast to refresh conversations list
+        // Send broadcast to refresh conversations list and active chat windows
         try {
+            const payload = { userId, trainerId: trainer.id };
             const channel = supabaseAdmin.channel('trainer_messages_realtime');
             await channel.subscribe();
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 50));
             await channel.send({
                 type: 'broadcast',
                 event: 'conversation_deleted',
-                payload: { userId }
+                payload
             });
             await channel.unsubscribe();
+
+            const ch1 = supabaseAdmin.channel(`trainer_messages_${trainer.id}_${userId}`);
+            await ch1.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await ch1.send({ type: 'broadcast', event: 'conversation_deleted', payload });
+            await ch1.unsubscribe();
+
+            const ch2 = supabaseAdmin.channel(`trainer_messages_user_${trainer.id}_${userId}`);
+            await ch2.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await ch2.send({ type: 'broadcast', event: 'conversation_deleted', payload });
+            await ch2.unsubscribe();
         } catch (err) {
-            logger.error('Error sending broadcast:', err);
+            logger.error('Error sending conversation_deleted broadcast:', err);
         }
 
         return NextResponse.json({ success: true });
@@ -244,3 +328,4 @@ export async function DELETE(
         );
     }
 }
+

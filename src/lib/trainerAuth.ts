@@ -171,3 +171,43 @@ export async function cleanExpiredTrainerSessions(): Promise<void> {
     }
 }
 
+/**
+ * Extract trainer token from request (supports Authorization Bearer header or trainer_token cookie)
+ */
+export async function getTrainerTokenFromRequest(request: Request): Promise<string | null> {
+    try {
+        const authHeader = request.headers.get('authorization');
+        if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+            const bearer = authHeader.substring(7).trim();
+            if (bearer) return bearer;
+        }
+
+        const reqAny = request as any;
+        if (reqAny.cookies?.get) {
+            const cookieVal = reqAny.cookies.get('trainer_token')?.value;
+            if (cookieVal) return cookieVal;
+        }
+
+        try {
+            const { cookies } = await import('next/headers');
+            const cookieStore = await cookies();
+            const cookieVal = cookieStore.get('trainer_token')?.value;
+            if (cookieVal) return cookieVal;
+        } catch {}
+
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Authoritatively authenticate trainer from request.
+ * Returns Trainer if valid, null if missing, expired, revoked, or inactive.
+ */
+export async function getTrainerFromRequest(request: Request): Promise<Trainer | null> {
+    const token = await getTrainerTokenFromRequest(request);
+    if (!token) return null;
+    return validateTrainerSession(token);
+}
+

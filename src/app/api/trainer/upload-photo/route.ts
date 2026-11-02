@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession } from '@/lib/trainerAuth';
+import { getTrainerFromRequest } from '@/lib/trainerAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -11,15 +11,9 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 
 export async function POST(request: NextRequest) {
     try {
-        // Authenticate trainer session from cookie
-        const token = request.cookies.get('trainer_token')?.value;
-        if (!token) {
-            return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ success: false, error: 'Invalid or expired trainer session' }, { status: 401 });
+            return NextResponse.json({ success: false, error: 'Not authenticated or session expired' }, { status: 401 });
         }
 
         // Get form data with file

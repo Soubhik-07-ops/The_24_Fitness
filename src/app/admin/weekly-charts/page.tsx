@@ -7,6 +7,7 @@ import Toast from '@/components/Toast/Toast';
 import { useToast } from '@/hooks/useToast';
 import styles from './weekly-charts.module.css';
 import cardStyles from '@/components/UserCard/UserCard.module.css';
+import { sanitizeChartContent } from '@/lib/chartUtils';
 
 interface WeeklyChart {
     id: number;
@@ -125,7 +126,7 @@ export default function AdminWeeklyChartsPage() {
             week_number: chart.week_number.toString(),
             chart_type: chart.chart_type,
             title: chart.title || '',
-            content: chart.content || '',
+            content: sanitizeChartContent(chart.content) || chart.content || '',
             file_url: chart.file_url || ''
         });
         setSelectedFile(null);
@@ -761,20 +762,29 @@ export default function AdminWeeklyChartsPage() {
                                                                                 </div>
                                                                             )}
 
-                                                                            {chart.content && (
+                                                                            {chart.content && sanitizeChartContent(chart.content) ? (
                                                                                 <div className={cardStyles.itemDetails}>
                                                                                     <div className={cardStyles.detailRow}>
                                                                                         <div className={cardStyles.detailLabel}>Content</div>
                                                                                         <div className={cardStyles.detailValue} style={{
-                                                                                            maxHeight: '100px',
+                                                                                            maxHeight: '120px',
                                                                                             overflow: 'auto',
                                                                                             whiteSpace: 'pre-wrap'
                                                                                         }}>
-                                                                                            {chart.content}
+                                                                                            {sanitizeChartContent(chart.content)}
                                                                                         </div>
                                                                                     </div>
                                                                                 </div>
-                                                                            )}
+                                                                            ) : !chart.file_url ? (
+                                                                                <div className={cardStyles.itemDetails}>
+                                                                                    <div className={cardStyles.detailRow}>
+                                                                                        <div className={cardStyles.detailLabel}>Status</div>
+                                                                                        <div className={cardStyles.detailValue} style={{ color: '#9ca3af', fontStyle: 'italic' }}>
+                                                                                            Protocol scheduled (No text details or attachment added yet)
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ) : null}
 
                                                                             <div className={cardStyles.itemActions}>
                                                                                 {chart.file_url && (

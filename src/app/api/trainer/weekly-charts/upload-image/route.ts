@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession } from '@/lib/trainerAuth';
+import { getTrainerFromRequest } from '@/lib/trainerAuth';
+import { validateAdminSession } from '@/lib/adminAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -11,59 +12,86 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 
 export async function POST(request: NextRequest) {
     try {
-        // Authenticate trainer session from cookie
-        const token = request.cookies.get('trainer_token')?.value;
-        if (!token) {
-            return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+        let trainer = await getTrainerFromRequest(request);
+        if (!trainer) {
+            // Also check for admin session authorization
+            const adminToken =
+                request.cookies.get('admin_token')?.value ||
+                request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+            if (adminToken) {
+                const admin = await validateAdminSession(adminToken);
+                if (admin) {
+                    trainer = { id: admin.id, name: admin.full_name || 'Admin', phone: '', email: admin.email || '' } as any;
+                }
+            }
         }
 
-        const trainer = await validateTrainerSession(token);
         if (!trainer) {
             return NextResponse.json({ success: false, error: 'Invalid or expired trainer session' }, { status: 401 });
         }
 
-        // Get form data with file
-        const formData = await request.formData();
-        const file = formData.get('file') as File;
-        const oldImageUrl = formData.get('oldImageUrl') as string | null;
+        const contentType = request.headers.get('content-type') || '';
+        let buffer: Buffer;
+        let fileType: string;
+        let fileExt: string;
+        let oldImageUrl: string | null = null;
 
-        if (!file) {
-            return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400 });
+        if (contentType.includes('application/json')) {
+            const body = await request.json().catch(() => ({}));
+            if (!body.base64) {
+                return NextResponse.json({ success: false, error: 'No image data provided' }, { status: 400 });
+            }
+            const cleanBase64 = String(body.base64).replace(/^data:[^;]+;base64,/, '');
+            buffer = Buffer.from(cleanBase64, 'base64');
+            fileType = body.type || 'image/jpeg';
+            fileExt = (body.name || 'image.jpg').split('.').pop() || (fileType.includes('png') ? 'png' : 'jpg');
+            oldImageUrl = body.oldImageUrl || null;
+        } else {
+            const formData = await request.formData();
+            const file = formData.get('file') as File;
+            oldImageUrl = formData.get('oldImageUrl') as string | null;
+
+            if (!file) {
+                return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400 });
+            }
+
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+            if (!allowedTypes.includes(file.type)) {
+                return NextResponse.json({ success: false, error: 'File must be an image (JPEG, PNG, WebP, GIF) or PDF' }, { status: 400 });
+            }
+
+            if (file.size > 10 * 1024 * 1024) {
+                return NextResponse.json({ success: false, error: 'File size must be less than 10MB' }, { status: 400 });
+            }
+
+            fileExt = file.name.split('.').pop() || 'jpg';
+            fileType = file.type;
+            const arrayBuffer = await file.arrayBuffer();
+            buffer = Buffer.from(arrayBuffer);
         }
 
-        // Validate file type (images and PDFs)
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
-        if (!allowedTypes.includes(file.type)) {
-            return NextResponse.json({ success: false, error: 'File must be an image (JPEG, PNG, WebP, GIF) or PDF' }, { status: 400 });
-        }
-
-        // Validate file size (10MB)
-        if (file.size > 10 * 1024 * 1024) {
+        // Validate buffer size (10MB limit)
+        if (buffer.length > 10 * 1024 * 1024) {
             return NextResponse.json({ success: false, error: 'File size must be less than 10MB' }, { status: 400 });
         }
 
         // Delete old image if provided
         if (oldImageUrl) {
             try {
-                // Extract path from URL
                 const urlParts = oldImageUrl.split('/');
                 const pathIndex = urlParts.findIndex((part: string) => part === 'weekly-charts');
                 if (pathIndex !== -1 && pathIndex < urlParts.length - 1) {
                     const oldPath = urlParts.slice(pathIndex + 1).join('/');
                     await supabaseAdmin.storage.from('weekly-charts').remove([oldPath]);
                 }
-            } catch (err) {
+            } catch {
                 // Continue even if deletion fails
             }
         }
 
         // Generate unique filename
-        const fileExt = file.name.split('.').pop();
-        const fileName = `weekly-charts/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-        // Convert File to ArrayBuffer for upload
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        const cleanExt = fileExt.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+        const fileName = `weekly-charts/${Date.now()}_${Math.random().toString(36).substring(7)}.${cleanExt}`;
 
         // Upload using service role (bypasses RLS)
         const { error: uploadError } = await supabaseAdmin.storage
@@ -71,7 +99,7 @@ export async function POST(request: NextRequest) {
             .upload(fileName, buffer, {
                 cacheControl: '3600',
                 upsert: false,
-                contentType: file.type
+                contentType: fileType,
             });
 
         if (uploadError) {
@@ -88,4 +116,3 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: err.message || String(err) }, { status: 500 });
     }
 }
-

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession } from '@/lib/trainerAuth';
-import { cookies } from 'next/headers';
+import { getTrainerFromRequest } from '@/lib/trainerAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -12,16 +11,9 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 
 export async function GET(request: NextRequest) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('trainer_token')?.value;
-
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or invalid session' }, { status: 401 });
         }
 
         // Get unread messages count (messages from users to trainer that haven't been read)

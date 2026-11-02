@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateAdminSession } from '@/lib/adminAuth';
+import { validateAdminSession, getAdminTokenFromRequest } from '@/lib/adminAuth';
 import { hashPassword } from '@/lib/trainerAuth';
-import { cookies } from 'next/headers';
 import { logger } from '@/lib/logger';
 import crypto from 'crypto';
 
@@ -28,8 +27,7 @@ function generateSecurePassword(): string {
 // Get all trainers
 export async function GET(request: NextRequest) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
 
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
@@ -63,8 +61,7 @@ export async function GET(request: NextRequest) {
 // Add a new trainer
 export async function POST(request: NextRequest) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
 
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });

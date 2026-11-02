@@ -87,24 +87,24 @@ export async function POST(
 
         // Get current date
         const now = new Date();
-        
+
         // Check if membership has expired or is nearing expiration (within 15-day renewal window)
         const endDate = membership.membership_end_date || membership.end_date;
         const hasExpired = endDate ? new Date(endDate) <= now : false;
         const diffMs = endDate ? new Date(endDate).getTime() - now.getTime() : 0;
         const daysUntilExpiry = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-        
+
         // Validate membership status - allow payment submission for:
         // 1. 'awaiting_payment' (new purchase)
         // 2. 'grace_period' (renewal)
         // 3. 'expired' (reactivation beyond grace period)
         // 4. 'active' if expired OR within 15 days of expiration (renewal window)
         // 5. 'rejected' (allowing safe retry of payment)
-        const isEligibleForRenewal = membership.status === 'grace_period' || 
+        const isEligibleForRenewal = membership.status === 'grace_period' ||
             membership.status === 'expired' ||
             membership.status === 'rejected' ||
             (membership.status === 'active' && (hasExpired || daysUntilExpiry <= 15));
-        
+
         if (membership.status !== 'awaiting_payment' && !isEligibleForRenewal) {
             return NextResponse.json(
                 { error: `Cannot submit payment. Membership is in '${membership.status}' status. Payment can only be submitted when membership status is 'awaiting_payment' (new purchase), 'grace_period' (renewal), 'expired' (reactivation), or within 15 days of expiration for active memberships.` },
@@ -130,7 +130,7 @@ export async function POST(
         }
 
         // Determine if this is a renewal payment
-        const isRenewal = membership.status === 'grace_period' || 
+        const isRenewal = membership.status === 'grace_period' ||
             membership.status === 'expired' ||
             membership.status === 'rejected' ||
             (membership.status === 'active' && (hasExpired || daysUntilExpiry <= 15));
@@ -282,7 +282,7 @@ export async function POST(
         const existingFormData = (typeof membership.form_data === 'object' && membership.form_data !== null) ? membership.form_data : {};
         const updatedFormData = {
             ...existingFormData,
-            ...(newPlan ? {
+            ...((newPlan || isRenewal) ? {
                 renewal_pending_plan: {
                     planName: targetPlanName,
                     planType: targetPlanType,

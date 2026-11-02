@@ -47,19 +47,19 @@ function RenewMembershipContent() {
 
                 // Verify membership is in grace period
                 const endDate = membershipData.end_date || membershipData.membership_end_date;
-                
+
                 // Check if membership has expired (end_date has passed)
                 const hasExpired = endDate ? new Date(endDate) <= now : false;
-                
+
                 // Check if membership is in grace period
                 // Two scenarios:
                 // 1. Status is 'grace_period' AND grace_period_end exists AND is in the future AND has expired
                 // 2. Status is 'active' BUT has expired (for demo mode - cron job might not have run yet)
                 //    In this case, we'll allow renewal but the backend will handle the transition
                 const isInGracePeriodStatus = membershipData.status === 'grace_period';
-                const hasValidGracePeriod = membershipData.grace_period_end && 
+                const hasValidGracePeriod = membershipData.grace_period_end &&
                     new Date(membershipData.grace_period_end) >= now;
-                
+
                 // Allow renewal if:
                 // - Status is grace_period AND grace_period_end is valid AND has expired
                 // OR
@@ -135,20 +135,20 @@ function RenewMembershipContent() {
     const now = useMemo(() => new Date(), []);
     const gracePeriodDaysRemaining = useMemo(() => {
         if (!membership) return null;
-        
+
         const gracePeriodEnd = membership.grace_period_end ?? null;
         const endDate = membership.end_date || membership.membership_end_date || null;
-        
+
         // Same eligibility checks as Dashboard:
         // 1. Status is 'grace_period'
         // 2. grace_period_end exists and is in the future
         // 3. Membership end_date has actually passed (expired)
         const hasExpired = endDate ? new Date(endDate) <= now : false;
-        const isInMembershipGracePeriod = membership.status === 'grace_period' && 
-            gracePeriodEnd && 
+        const isInMembershipGracePeriod = membership.status === 'grace_period' &&
+            gracePeriodEnd &&
             new Date(gracePeriodEnd) >= now &&
             hasExpired;
-        
+
         // Only calculate if actually in grace period (same as Dashboard)
         if (!isInMembershipGracePeriod || !gracePeriodEnd) return null;
         return getGracePeriodDaysRemaining(gracePeriodEnd, now);
@@ -250,10 +250,10 @@ function RenewMembershipContent() {
                             <span className={styles.statusValue}>
                                 {membership.grace_period_end
                                     ? new Date(membership.grace_period_end).toLocaleDateString('en-IN', {
-                                          year: 'numeric',
-                                          month: 'long',
-                                          day: 'numeric'
-                                      })
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                    })
                                     : 'N/A'}
                             </span>
                         </div>

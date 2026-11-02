@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession, verifyPassword, hashPassword } from '@/lib/trainerAuth';
-import { cookies } from 'next/headers';
+import { getTrainerFromRequest, verifyPassword, hashPassword } from '@/lib/trainerAuth';
 import { logger } from '@/lib/logger';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -14,16 +13,9 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 // Change trainer password
 export async function POST(request: NextRequest) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('trainer_token')?.value;
-
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or invalid session' }, { status: 401 });
         }
 
         const body = await request.json();

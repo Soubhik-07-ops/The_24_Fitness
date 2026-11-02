@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession } from '@/lib/trainerAuth';
-import { cookies } from 'next/headers';
+import { getTrainerFromRequest } from '@/lib/trainerAuth';
 import { logger } from '@/lib/logger';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -17,16 +16,9 @@ export async function DELETE(
     context: { params: Promise<{ userId: string }> }
 ) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('trainer_token')?.value;
-
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or invalid session' }, { status: 401 });
         }
 
         const { userId } = await context.params;

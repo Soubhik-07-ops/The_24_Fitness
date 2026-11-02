@@ -83,6 +83,7 @@ export default function Dashboard() {
     const [profileLoading, setProfileLoading] = useState(true);
     const [isOnline, setIsOnline] = useState(true);
     const [membershipHistory, setMembershipHistory] = useState<any>(null);
+    const [aggregatedFinancials, setAggregatedFinancials] = useState<{ totalPaid: number; pendingAmount: number; totalPayments: number; verifiedPayments: number } | null>(null);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [invoices, setInvoices] = useState<any[]>([]);
     const [loadingInvoices, setLoadingInvoices] = useState(false);
@@ -283,12 +284,11 @@ export default function Dashboard() {
     const fetchUserMembership = useCallback(async (userId: string) => {
         try {
             setMembershipLoading(true);
-            // Get ALL active memberships (not just one) - include grace_period for renewals
+            // Get ALL memberships (not just active) - include expired and grace_period for complete history
             const { data: memberships, error } = await supabase
                 .from('memberships')
                 .select('*')
                 .eq('user_id', userId)
-                .in('status', ['pending', 'active', 'grace_period'])
                 .order('created_at', { ascending: false });
 
             if (error) {
@@ -366,10 +366,57 @@ export default function Dashboard() {
                     })
                 );
 
-                // Set the most recent one as the primary membership for display
-                const primaryMembership = membershipsWithTrainers[0];
+                // Deterministically prioritize primary membership:
+                // active / approved (1) > grace_period (2) > pending (3) > expired (4) > rejected (5)
+                const statusPriority: Record<string, number> = {
+                    active: 1,
+                    approved: 1,
+                    grace_period: 2,
+                    pending: 3,
+                    expired: 4,
+                    rejected: 5
+                };
+                const sortedMemberships = [...membershipsWithTrainers].sort((a: any, b: any) => {
+                    const pA = statusPriority[String(a.status || '').toLowerCase()] || 99;
+                    const pB = statusPriority[String(b.status || '').toLowerCase()] || 99;
+                    if (pA !== pB) return pA - pB;
+                    const timeA = a.membership_end_date || a.end_date ? new Date(a.membership_end_date || a.end_date).getTime() : 0;
+                    const timeB = b.membership_end_date || b.end_date ? new Date(b.membership_end_date || b.end_date).getTime() : 0;
+                    if (timeB !== timeA) return timeB - timeA;
+                    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                });
+
+                const primaryMembership = sortedMemberships[0];
                 setMembership(primaryMembership);
                 setAllMemberships(membershipsWithTrainers);
+
+                // Fetch verified payments across ALL member memberships to compute authoritative totalPaid
+                const allMembershipIds = membershipsWithTrainers.map((m: any) => m.id);
+                if (allMembershipIds.length > 0) {
+                    try {
+                        const { data: allMemberPayments } = await supabase
+                            .from('membership_payments')
+                            .select('id, membership_id, amount, status')
+                            .in('membership_id', allMembershipIds);
+
+                        if (allMemberPayments) {
+                            const verifiedSum = allMemberPayments
+                                .filter((p: any) => p.status === 'verified')
+                                .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+                            const pendingSum = allMemberPayments
+                                .filter((p: any) => p.status === 'pending')
+                                .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+                            setAggregatedFinancials({
+                                totalPaid: verifiedSum,
+                                pendingAmount: pendingSum,
+                                totalPayments: allMemberPayments.length,
+                                verifiedPayments: allMemberPayments.filter((p: any) => p.status === 'verified').length
+                            });
+                        }
+                    } catch (payErr) {
+                        console.warn('[DASHBOARD] Could not aggregate all payments:', payErr);
+                    }
+                }
 
                 // Fetch membership history (this will also set addons from history - includes all addons from renewals)
                 if (primaryMembership.id) {
@@ -780,8 +827,8 @@ export default function Dashboard() {
         const activeMemberships = allMemberships.filter(m => getEffectiveMembershipStatus(m) === 'active');
         const expirationStatus = membership ? getMembershipExpirationStatus(membership) : null;
         const trainerExpiration = membership && membership.trainer_assigned ? getTrainerPeriodExpirationStatus(membership) : null;
-        const totalPaid = membershipHistory?.financialSummary?.totalPaid || 0;
-        const pendingAmount = membershipHistory?.financialSummary?.pendingAmount || 0;
+        const totalPaid = aggregatedFinancials?.totalPaid ?? (membershipHistory?.financialSummary?.totalPaid || 0);
+        const pendingAmount = aggregatedFinancials?.pendingAmount ?? (membershipHistory?.financialSummary?.pendingAmount || 0);
         const workoutCharts = weeklyCharts.filter(c => c.chart_type === 'workout').length;
         const dietCharts = weeklyCharts.filter(c => c.chart_type === 'diet').length;
 
@@ -937,8 +984,17 @@ export default function Dashboard() {
                             <Award size={24} />
                         </div>
                         <div className={styles.statContent}>
-                            <div className={styles.statValue}>{membership ? membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1) : 'None'}</div>
-                            <div className={styles.statLabel}>Current Plan</div>
+                            <div className={styles.statValue}>
+                                {membership ? (
+                                    <>
+                                        {membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)}
+                                        {effectiveStatus === 'expired' && <span style={{ fontSize: '0.75rem', marginLeft: '0.4rem', color: '#dc2626' }}>(Expired)</span>}
+                                        {effectiveStatus === 'grace_period' && <span style={{ fontSize: '0.75rem', marginLeft: '0.4rem', color: '#f59e0b' }}>(Grace Period)</span>}
+                                        {effectiveStatus === 'pending' && <span style={{ fontSize: '0.75rem', marginLeft: '0.4rem', color: '#f59e0b' }}>(Pending)</span>}
+                                    </>
+                                ) : 'None'}
+                            </div>
+                            <div className={styles.statLabel}>{effectiveStatus === 'expired' ? 'Previous Plan' : 'Current Plan'}</div>
                         </div>
                     </div>
 

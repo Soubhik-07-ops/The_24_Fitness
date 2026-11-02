@@ -51,6 +51,22 @@ export default function TrainerChatWindow({ trainerId, trainerName }: TrainerCha
                 .limit(1)
                 .maybeSingle();
 
+            // Check if user has any pending payment awaiting admin approval
+            if (membershipData?.id) {
+                const { data: pendingPayments } = await supabase
+                    .from('membership_payments')
+                    .select('id')
+                    .eq('membership_id', membershipData.id)
+                    .in('status', ['pending', 'under_review'])
+                    .limit(1);
+
+                if (pendingPayments && pendingPayments.length > 0) {
+                    setHasTrainerAccess(false);
+                    setRestrictionMessage('Trainer messaging is locked while your renewal payment is pending admin approval.');
+                    return false;
+                }
+            }
+
             if (!membershipData) {
                 setHasTrainerAccess(false);
                 setRestrictionMessage('You can only message trainers when you have an active membership with trainer access assigned.');
@@ -140,20 +156,25 @@ export default function TrainerChatWindow({ trainerId, trainerName }: TrainerCha
                 event: 'INSERT',
                 schema: 'public',
                 table: 'trainer_messages',
-                filter: `trainer_id=eq.${trainerId} AND user_id=eq.${userId}`
+                filter: `user_id=eq.${userId}`
             }, (payload) => {
-                console.log('[USER MESSAGES] Received postgres_changes:', payload);
                 const newMsg = payload.new as any;
+                if (!newMsg || String(newMsg.trainer_id) !== String(trainerId)) return;
                 setMessages((prev) => {
-                    if (prev.some(m => m.id === newMsg.id)) return prev;
-                    console.log('[USER MESSAGES] Adding new message from postgres_changes:', newMsg.id);
+                    if (prev.some(m => String(m.id) === String(newMsg.id))) return prev;
                     return [...prev, newMsg as ChatMessage];
                 });
             })
-            .on('broadcast', { event: 'new_message' }, async () => {
-                // Fallback refresh if DB changes don't come through (due to RLS)
-                console.log('[USER MESSAGES] Received broadcast - refreshing messages');
-                await loadMessages();
+            .on('broadcast', { event: 'new_message' }, async (payload: any) => {
+                const incomingMsg = payload.payload?.message;
+                if (incomingMsg && String(incomingMsg.trainer_id) === String(trainerId)) {
+                    setMessages((prev) => {
+                        if (prev.some(m => String(m.id) === String(incomingMsg.id))) return prev;
+                        return [...prev, incomingMsg as ChatMessage];
+                    });
+                } else {
+                    await loadMessages();
+                }
             })
             .on('broadcast', { event: 'message_deleted' }, (payload: any) => {
                 // Remove deleted message from local state

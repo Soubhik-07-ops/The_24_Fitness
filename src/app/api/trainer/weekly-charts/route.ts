@@ -1,7 +1,7 @@
 // src/app/api/trainer/weekly-charts/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession } from '@/lib/trainerAuth';
+import { getTrainerFromRequest } from '@/lib/trainerAuth';
 import { getChartResponsibility, needsWorkoutCharts, needsDietCharts } from '@/lib/chartResponsibility';
 import { getTrainerPeriodExpirationStatus } from '@/lib/membershipUtils';
 
@@ -15,14 +15,9 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 // GET: Fetch weekly charts for trainer's clients
 export async function GET(request: NextRequest) {
     try {
-        const token = request.cookies.get('trainer_token')?.value;
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired trainer session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or session expired' }, { status: 401 });
         }
 
         // Get all memberships where this trainer is assigned (from memberships table)
@@ -108,14 +103,9 @@ export async function GET(request: NextRequest) {
 // POST: Create a new weekly chart
 export async function POST(request: NextRequest) {
     try {
-        const token = request.cookies.get('trainer_token')?.value;
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired trainer session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or session expired' }, { status: 401 });
         }
 
         const body = await request.json();
@@ -198,7 +188,8 @@ export async function POST(request: NextRequest) {
         });
 
         // Check if trainer can upload based on chart responsibility
-        if (!chartResp.canTrainerUpload || chartResp.shouldUpload !== 'trainer') {
+        // If the trainer assignment period is active (or in grace period), trainer is authorized to upload charts
+        if (!isPeriodActive && !isInGracePeriod && (!chartResp.canTrainerUpload || chartResp.shouldUpload !== 'trainer')) {
             return NextResponse.json(
                 { error: `You cannot upload charts for this membership. ${chartResp.reason}` },
                 { status: 403 }
@@ -206,27 +197,16 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if chart type is allowed
-        const planNameLower = String(membership.plan_name || '').toLowerCase();
-        const isBasicPlan = planNameLower === 'basic';
-        const isRegularPlan = planNameLower.includes('regular');
+        const hasActiveTrainerAccess = Boolean(hasTrainerAddon || isPeriodActive || isInGracePeriod);
 
-        // Basic plans only get workout charts
-        if (chart_type === 'diet' && isBasicPlan) {
+        if (chart_type === 'diet' && !needsDietCharts(membership.plan_name, hasActiveTrainerAccess)) {
             return NextResponse.json(
-                { error: 'Basic plans only include workout charts, not diet charts.' },
+                { error: 'This plan type without trainer access does not include diet charts.' },
                 { status: 400 }
             );
         }
 
-        // Check using helper functions
-        if (chart_type === 'diet' && !needsDietCharts(membership.plan_name, hasTrainerAddon)) {
-            return NextResponse.json(
-                { error: 'This plan type does not include diet charts.' },
-                { status: 400 }
-            );
-        }
-
-        if (chart_type === 'workout' && !needsWorkoutCharts(membership.plan_name, hasTrainerAddon)) {
+        if (chart_type === 'workout' && !needsWorkoutCharts(membership.plan_name, hasActiveTrainerAccess)) {
             return NextResponse.json(
                 { error: 'This plan type does not include workout charts.' },
                 { status: 400 }

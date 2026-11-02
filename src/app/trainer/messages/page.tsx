@@ -118,12 +118,15 @@ export default function TrainerMessagesPage() {
                 fetchConversations();
             })
             .on('broadcast', { event: 'conversation_deleted' }, () => {
-                console.log('[TRAINER MESSAGES LIST] Conversation deleted, refreshing');
                 fetchConversations();
             })
-            .subscribe((status) => {
-                console.log('[TRAINER MESSAGES LIST] Subscription status:', status);
-            });
+            .on('broadcast', { event: 'conversation_updated' }, () => {
+                fetchConversations();
+            })
+            .on('broadcast', { event: 'new_message' }, () => {
+                fetchConversations();
+            })
+            .subscribe();
 
         return () => {
             supabase.removeChannel(channel);

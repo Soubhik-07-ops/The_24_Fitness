@@ -416,7 +416,7 @@ function PaymentPageContent() {
             const isPlanSwitched = activePlanName.toLowerCase() !== currentPlanName ||
                 (selectedRenewalPlan && selectedRenewalPlan.planType !== (membership.plan_type || ''))
 
-            if (isPlanSwitched) {
+            if (isPlanSwitched || renewalType === 'membership') {
                 payload.newPlan = {
                     planName: activePlanName,
                     planType: activePlanType,
@@ -560,7 +560,7 @@ function PaymentPageContent() {
     const isInherentlyInGymPlan = activePlanType === 'in_gym' || activeDisplayName.toLowerCase().includes('regular')
     // In-gym offline add-on has no extra fee (removed per gym specification)
     const inGymAddonPrice = 0
-    
+
     let trainerAddonPrice = 0
     if (renewalType === 'trainer' && trainerId && durationMonths) {
         // Trainer renewal: calculate from trainer price and duration
@@ -692,84 +692,84 @@ function PaymentPageContent() {
 
                 {/* Add-ons Section - Separate Container - Hide for trainer renewals */}
                 {renewalType !== 'trainer' && (
-                <div className={styles.addonsContainer}>
-                    <h2 className={styles.addonsTitle}>Add-On Options</h2>
-                    <div className={styles.addonsSection}>
+                    <div className={styles.addonsContainer}>
+                        <h2 className={styles.addonsTitle}>Add-On Options</h2>
+                        <div className={styles.addonsSection}>
 
-                        {/* Personal Trainer Add-on - Always available for all plans */}
-                        {(() => {
-                            // Determine eligibility based on plan configuration
-                            // Trainer addon is always available, but we check for consistency
-                            const planConfig = {
-                                planName: membership.plan_name || '',
-                                planType: membership.plan_type || '',
-                                durationMonths: membership.duration_months
-                            };
-                            return isTrainerAddonAvailable(planConfig);
-                        })() && (
-                        <div className={styles.addonCard}>
-                            <label className={styles.addonLabel}>
-                                <input
-                                    type="checkbox"
-                                    checked={addons.personalTrainer}
-                                    onChange={(e) => {
-                                        const checked = e.target.checked
-                                        setAddons(prev => ({
-                                            ...prev,
-                                            personalTrainer: checked,
-                                            selectedTrainer: checked ? (prev.selectedTrainer || null) : null
-                                        }))
-                                    }}
-                                    className={styles.checkbox}
-                                />
-                                <div className={styles.addonContent}>
-                                    <h3>Personal Trainer Add-On</h3>
-                                    <p>Get personalized training from certified trainers</p>
-                                    <p className={styles.addonPrice}>Select trainer to see price</p>
-                                </div>
-                            </label>
+                            {/* Personal Trainer Add-on - Always available for all plans */}
+                            {(() => {
+                                // Determine eligibility based on plan configuration
+                                // Trainer addon is always available, but we check for consistency
+                                const planConfig = {
+                                    planName: membership.plan_name || '',
+                                    planType: membership.plan_type || '',
+                                    durationMonths: membership.duration_months
+                                };
+                                return isTrainerAddonAvailable(planConfig);
+                            })() && (
+                                    <div className={styles.addonCard}>
+                                        <label className={styles.addonLabel}>
+                                            <input
+                                                type="checkbox"
+                                                checked={addons.personalTrainer}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked
+                                                    setAddons(prev => ({
+                                                        ...prev,
+                                                        personalTrainer: checked,
+                                                        selectedTrainer: checked ? (prev.selectedTrainer || null) : null
+                                                    }))
+                                                }}
+                                                className={styles.checkbox}
+                                            />
+                                            <div className={styles.addonContent}>
+                                                <h3>Personal Trainer Add-On</h3>
+                                                <p>Get personalized training from certified trainers</p>
+                                                <p className={styles.addonPrice}>Select trainer to see price</p>
+                                            </div>
+                                        </label>
 
-                            {addons.personalTrainer && (
-                                <div className={styles.trainerSelection}>
-                                    <label className={styles.trainerLabel}>Select Trainer:</label>
-                                    <div className={styles.trainerOptions}>
-                                        {trainers.map(trainer => (
-                                            <label
-                                                key={trainer.id}
-                                                className={`${styles.trainerOption} ${addons.selectedTrainer === trainer.id ? styles.selected : ''}`}
-                                            >
-                                                <input
-                                                    type="radio"
-                                                    name="trainer"
-                                                    value={trainer.id}
-                                                    checked={addons.selectedTrainer === trainer.id}
-                                                    onChange={(e) => setAddons(prev => ({ ...prev, selectedTrainer: e.target.value }))}
-                                                    className={styles.radio}
-                                                />
-                                                <div className={styles.trainerInfo}>
-                                                    <span className={styles.trainerName}>{trainer.name}</span>
-                                                    <span className={styles.trainerPrice}>₹{trainer.price.toLocaleString()}</span>
+                                        {addons.personalTrainer && (
+                                            <div className={styles.trainerSelection}>
+                                                <label className={styles.trainerLabel}>Select Trainer:</label>
+                                                <div className={styles.trainerOptions}>
+                                                    {trainers.map(trainer => (
+                                                        <label
+                                                            key={trainer.id}
+                                                            className={`${styles.trainerOption} ${addons.selectedTrainer === trainer.id ? styles.selected : ''}`}
+                                                        >
+                                                            <input
+                                                                type="radio"
+                                                                name="trainer"
+                                                                value={trainer.id}
+                                                                checked={addons.selectedTrainer === trainer.id}
+                                                                onChange={(e) => setAddons(prev => ({ ...prev, selectedTrainer: e.target.value }))}
+                                                                className={styles.radio}
+                                                            />
+                                                            <div className={styles.trainerInfo}>
+                                                                <span className={styles.trainerName}>{trainer.name}</span>
+                                                                <span className={styles.trainerPrice}>₹{trainer.price.toLocaleString()}</span>
+                                                            </div>
+                                                            {addons.selectedTrainer === trainer.id && (
+                                                                <Check size={20} className={styles.checkIcon} />
+                                                            )}
+                                                        </label>
+                                                    ))}
                                                 </div>
-                                                {addons.selectedTrainer === trainer.id && (
-                                                    <Check size={20} className={styles.checkIcon} />
-                                                )}
-                                            </label>
-                                        ))}
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
-                            )}
+                                )}
                         </div>
-                        )}
-                    </div>
 
-                    {/* Total Amount Display after Add-ons */}
-                    <div className={styles.totalAmountSection}>
-                        <div className={styles.totalAmountRow}>
-                            <span className={styles.totalLabel}>Total Amount:</span>
-                            <span className={styles.totalPrice}>₹{totalAmount.toLocaleString()}</span>
+                        {/* Total Amount Display after Add-ons */}
+                        <div className={styles.totalAmountSection}>
+                            <div className={styles.totalAmountRow}>
+                                <span className={styles.totalLabel}>Total Amount:</span>
+                                <span className={styles.totalPrice}>₹{totalAmount.toLocaleString()}</span>
+                            </div>
                         </div>
                     </div>
-                </div>
                 )}
 
                 <form onSubmit={handleSubmit} className={styles.form}>

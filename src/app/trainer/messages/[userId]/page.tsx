@@ -142,31 +142,37 @@ export default function TrainerChatPage() {
     const setupRealtimeSubscription = () => {
         if (!userId || !trainerId) return;
 
-        // Message subscription - filter by trainer_id AND user_id to get messages for this specific conversation
+        // Message subscription - filter by trainer_id to get messages for this trainer
         const channel = supabase
             .channel(`trainer_messages_${trainerId}_${userId}`)
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
                 table: 'trainer_messages',
-                filter: `trainer_id=eq.${trainerId} AND user_id=eq.${userId}`
+                filter: `trainer_id=eq.${trainerId}`
             }, (payload) => {
-                console.log('[TRAINER MESSAGES] Received postgres_changes:', payload);
                 const newMsg = payload.new as any;
+                if (!newMsg || String(newMsg.user_id) !== String(userId)) return;
                 setMessages((prev) => {
-                    if (prev.some(m => m.id === newMsg.id)) return prev;
-                    console.log('[TRAINER MESSAGES] Adding new message:', newMsg.id);
+                    if (prev.some(m => String(m.id) === String(newMsg.id))) return prev;
                     return [...prev, newMsg as ChatMessage];
                 });
             })
-            .on('broadcast', { event: 'new_message' }, async () => {
-                // Fallback refresh if DB changes don't come through
-                console.log('[TRAINER MESSAGES] Received broadcast - refreshing messages');
-                await fetchMessages();
+            .on('broadcast', { event: 'new_message' }, async (payload: any) => {
+                const incomingMsg = payload.payload?.message;
+                if (incomingMsg && String(incomingMsg.user_id) === String(userId)) {
+                    setMessages((prev) => {
+                        if (prev.some(m => String(m.id) === String(incomingMsg.id))) return prev;
+                        return [...prev, incomingMsg as ChatMessage];
+                    });
+                } else {
+                    await fetchMessages();
+                }
             })
-            .subscribe((status) => {
-                console.log('[TRAINER MESSAGES] Channel subscription status:', status);
-            });
+            .on('broadcast', { event: 'conversation_deleted' }, () => {
+                setMessages([]);
+            })
+            .subscribe();
 
         channelRef.current = channel;
 

@@ -142,11 +142,35 @@ export async function POST(
         // For Regular Monthly plans, also check membership expiry (trainer access expires with membership)
         const { data: membershipData } = await supabaseAdmin
             .from('memberships')
-            .select('id, trainer_id, trainer_period_end, trainer_grace_period_end, membership_end_date, end_date, plan_name')
+            .select('id, trainer_id, trainer_period_end, trainer_grace_period_end, membership_end_date, end_date, plan_name, status')
             .eq('user_id', user.id)
             .eq('trainer_id', trainerId)
             .limit(1)
             .maybeSingle();
+
+        // Check if user has any pending renewal payment awaiting admin approval
+        if (membershipData?.id) {
+            const { data: pendingPayments } = await supabaseAdmin
+                .from('membership_payments')
+                .select('id')
+                .eq('membership_id', membershipData.id)
+                .in('status', ['pending', 'under_review'])
+                .limit(1);
+
+            if (pendingPayments && pendingPayments.length > 0) {
+                return NextResponse.json(
+                    { error: 'Trainer messaging is locked while your renewal payment is pending admin approval.' },
+                    { status: 403 }
+                );
+            }
+        }
+
+        if (membershipData?.status && membershipData.status.toLowerCase() !== 'active') {
+            return NextResponse.json(
+                { error: 'Trainer messaging requires an active membership.' },
+                { status: 403 }
+            );
+        }
 
         // Import and use the access control utility
         const { checkTrainerMessagingAccess } = await import('@/lib/trainerMessagingAccess');
@@ -234,19 +258,33 @@ export async function POST(
                 logger.error('[USER SEND MESSAGE] Exception sending to trainer channel:', err);
             }
 
-            // Also broadcast to trainer's message channel for real-time update in message page
+            // Broadcast to both channel naming variants and conversation list
             try {
-                const messageChannel = supabaseAdmin.channel(`trainer_messages_${trainerId}_${user.id}`);
-                await messageChannel.subscribe();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                await messageChannel.send({
+                const payload = { by: 'user', userId: user.id, message };
+                const ch1 = supabaseAdmin.channel(`trainer_messages_${trainerId}_${user.id}`);
+                await ch1.subscribe();
+                await new Promise(resolve => setTimeout(resolve, 50));
+                await ch1.send({ type: 'broadcast', event: 'new_message', payload });
+                await ch1.unsubscribe();
+
+                const ch2 = supabaseAdmin.channel(`trainer_messages_user_${trainerId}_${user.id}`);
+                await ch2.subscribe();
+                await new Promise(resolve => setTimeout(resolve, 50));
+                await ch2.send({ type: 'broadcast', event: 'new_message', payload });
+                await ch2.unsubscribe();
+
+                // Live updates for trainer conversation list & unread counts
+                const listCh = supabaseAdmin.channel('trainer_messages_realtime');
+                await listCh.subscribe();
+                await new Promise(resolve => setTimeout(resolve, 50));
+                await listCh.send({
                     type: 'broadcast',
-                    event: 'new_message',
-                    payload: { by: 'user', userId: user.id }
+                    event: 'conversation_updated',
+                    payload: { userId: user.id, trainerId, message }
                 });
-                await messageChannel.unsubscribe();
+                await listCh.unsubscribe();
             } catch (broadcastErr) {
-                logger.error('[USER SEND MESSAGE] Error broadcasting to message channel:', broadcastErr);
+                logger.error('[USER SEND MESSAGE] Error broadcasting to message channels:', broadcastErr);
             }
         } catch (notifErr) {
             logger.error('Failed to send notification:', notifErr);

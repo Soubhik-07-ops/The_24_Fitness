@@ -707,11 +707,21 @@ export default function MembershipsManagement() {
         return getTrainerPeriodExpirationStatusUtil(endDate, now);
     };
 
+    // Helper to identify if a membership has a rejected status or rejected latest payment
+    const isMembershipRejected = (m: any) => {
+        return m.status === 'rejected' || m.latest_payment_status === 'rejected' || (m.all_payments && m.all_payments[0]?.status === 'rejected');
+    };
+    const isMembershipPending = (m: any) => {
+        return m.status === 'pending' || m.latest_payment_status === 'pending' || (m.all_payments && m.all_payments.some((p: any) => p.status === 'pending'));
+    };
+
     // Group memberships by user
     const userGroups = useMemo(() => {
         const filtered = memberships.filter(m => {
             if (m.status === 'awaiting_payment') return false;
             if (filter === 'all') return true;
+            if (filter === 'rejected') return isMembershipRejected(m);
+            if (filter === 'pending') return isMembershipPending(m);
             return m.status === filter;
         });
 
@@ -756,9 +766,9 @@ export default function MembershipsManagement() {
 
     const stats = {
         total: memberships.length,
-        pending: memberships.filter(m => m.status === 'pending').length,
+        pending: memberships.filter(m => isMembershipPending(m)).length,
         active: memberships.filter(m => m.status === 'active').length,
-        rejected: memberships.filter(m => m.status === 'rejected').length
+        rejected: memberships.filter(m => isMembershipRejected(m)).length
     };
 
     if (loading) {
@@ -1008,11 +1018,17 @@ export default function MembershipsManagement() {
                                                                     <span>{membership.plan_name.charAt(0).toUpperCase() + membership.plan_name.slice(1)} Plan</span>
                                                                 </div>
                                                                 <div className={cardStyles.itemMeta}>
-                                                                    <span className={`${cardStyles.itemBadge} ${membership.status === 'active' ? cardStyles.badgeSuccess :
-                                                                        membership.status === 'pending' ? cardStyles.badgeWarning :
-                                                                            cardStyles.badgeDanger
-                                                                        }`}>
-                                                                        {membership.status.charAt(0).toUpperCase() + membership.status.slice(1)}
+                                                                    <span className={`${cardStyles.itemBadge} ${
+                                                                        isMembershipRejected(membership) ? cardStyles.badgeDanger :
+                                                                        membership.status === 'active' ? cardStyles.badgeSuccess :
+                                                                        (membership.status === 'pending' || isMembershipPending(membership)) ? cardStyles.badgeWarning :
+                                                                        cardStyles.badgeDanger
+                                                                    }`}>
+                                                                        {isMembershipRejected(membership)
+                                                                            ? (membership.status === 'expired' ? 'Expired (Renewal Rejected)' : 'Rejected')
+                                                                            : isMembershipPending(membership) && membership.status !== 'pending'
+                                                                            ? 'Renewal Pending'
+                                                                            : membership.status.charAt(0).toUpperCase() + membership.status.slice(1)}
                                                                     </span>
                                                                     <span>ID: #{membership.id}</span>
                                                                     <span>•</span>

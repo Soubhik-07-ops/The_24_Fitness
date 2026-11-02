@@ -34,15 +34,15 @@ export function getChartResponsibility(config: ChartResponsibilityConfig): Chart
         currentDate
     } = config;
 
-    const planLower = planName.toLowerCase();
-    const isRegular = planLower.includes('regular');
-    const isBasic = planLower === 'basic';
-    const isPremium = planLower === 'premium';
-    const isElite = planLower === 'elite';
+    const planLower = (planName || '').toLowerCase().trim();
+    const isRegular = planLower.includes('regular') || planLower.includes('monthly');
+    const isBasic = planLower.includes('basic') || planLower.includes('3 month') || planLower.includes('3-month');
+    const isPremium = planLower.includes('premium') || planLower.includes('6 month') || planLower.includes('6-month');
+    const isElite = planLower.includes('elite') || planLower.includes('12 month') || planLower.includes('12-month') || planLower.includes('annual') || planLower.includes('yearly');
 
     // Regular Plan Logic
     if (isRegular) {
-        if (!hasTrainerAddon) {
+        if (!hasTrainerAddon && !trainerPeriodEnd) {
             return {
                 shouldUpload: 'none',
                 reason: 'Regular plans without trainer addon do not require charts',
@@ -68,14 +68,13 @@ export function getChartResponsibility(config: ChartResponsibilityConfig): Chart
             }
         }
         
-        // Regular with trainer addon: Trainer uploads workout+diet for entire period (1 month)
-        // Only if membership hasn't expired
+        // Regular with trainer addon or assigned trainer: Trainer uploads workout+diet for entire period
         if (trainerPeriodEnd && currentDate <= trainerPeriodEnd) {
             return {
                 shouldUpload: 'trainer',
-                reason: 'Regular plan with trainer addon - trainer uploads workout+diet charts',
+                reason: 'Regular plan with trainer access - trainer uploads workout+diet charts',
                 canTrainerUpload: true,
-                canAdminUpload: false // Admin just views, doesn't upload
+                canAdminUpload: false
             };
         } else {
             return {
@@ -89,76 +88,39 @@ export function getChartResponsibility(config: ChartResponsibilityConfig): Chart
 
     // Basic Plan Logic (3 months)
     if (isBasic) {
-        // Basic plans always get workout charts (no diet)
-        if (!hasTrainerAddon) {
-            // No trainer addon: Admin uploads workout charts for 3 months
-            return {
-                shouldUpload: 'admin',
-                reason: 'Basic plan without trainer - admin uploads workout charts for 3 months',
-                canTrainerUpload: false,
-                canAdminUpload: true
-            };
-        }
-        // Has trainer addon: Trainer uploads for 1 month, then admin until trainer renewal
-        // If trainer renews, trainer continues. If not, admin provides charts.
+        // If trainer is assigned and period is active, trainer can upload workout and diet charts
         if (trainerPeriodEnd && currentDate <= trainerPeriodEnd) {
             return {
                 shouldUpload: 'trainer',
-                reason: 'Basic plan with trainer addon - trainer uploads workout charts for 1 month',
+                reason: 'Basic plan with active trainer - trainer uploads workout and diet charts',
                 canTrainerUpload: true,
                 canAdminUpload: false
             };
-        } else {
-            // Trainer period expired - admin uploads until trainer renewal
-            return {
-                shouldUpload: 'admin',
-                reason: 'Basic plan trainer period expired - admin uploads workout charts until trainer renewal',
-                canTrainerUpload: false,
-                canAdminUpload: true
-            };
         }
+        // No trainer or trainer expired: Admin uploads
+        return {
+            shouldUpload: 'admin',
+            reason: hasTrainerAddon
+                ? 'Basic plan trainer period expired - admin uploads workout charts until trainer renewal'
+                : 'Basic plan without trainer - admin uploads workout charts for 3 months',
+            canTrainerUpload: false,
+            canAdminUpload: true
+        };
     }
 
     // Premium Plan Logic (6 months)
-    // Premium gets workout + diet charts
     if (isPremium) {
-        // Calculate free trainer period (1 week = 7 days)
-        const freeTrainerPeriodEnd = new Date(membershipStartDate);
-        freeTrainerPeriodEnd.setDate(freeTrainerPeriodEnd.getDate() + 7);
-        freeTrainerPeriodEnd.setHours(23, 59, 59, 999);
-
-        if (!hasTrainerAddon) {
-            // No trainer addon: Trainer uploads for 1 week (free), then admin for remaining period
-            // Check if trainer is actually assigned (trainer_period_end exists and covers free period)
-            if (trainerPeriodEnd && currentDate <= trainerPeriodEnd && currentDate <= freeTrainerPeriodEnd) {
-                return {
-                    shouldUpload: 'trainer',
-                    reason: 'Premium plan - trainer uploads workout+diet charts for free 1 week period',
-                    canTrainerUpload: true,
-                    canAdminUpload: false
-                };
-            } else {
-                // Free period ended or no trainer assigned - admin uploads
-                return {
-                    shouldUpload: 'admin',
-                    reason: 'Premium plan - free trainer period ended or no trainer assigned, admin uploads workout+diet charts',
-                    canTrainerUpload: false,
-                    canAdminUpload: true
-                };
-            }
-        }
-        // Has trainer addon: Trainer uploads for 1 week (free) + 1 month (addon), then admin until renewal
         if (trainerPeriodEnd && currentDate <= trainerPeriodEnd) {
             return {
                 shouldUpload: 'trainer',
-                reason: 'Premium plan with trainer addon - trainer uploads workout+diet charts for 1 week + 1 month',
+                reason: 'Premium plan with active trainer - trainer uploads workout+diet charts',
                 canTrainerUpload: true,
                 canAdminUpload: false
             };
         } else {
             return {
                 shouldUpload: 'admin',
-                reason: 'Premium plan trainer period expired - admin uploads workout+diet charts until renewal',
+                reason: 'Premium plan trainer period ended or not assigned - admin uploads workout+diet charts',
                 canTrainerUpload: false,
                 canAdminUpload: true
             };
@@ -166,55 +128,37 @@ export function getChartResponsibility(config: ChartResponsibilityConfig): Chart
     }
 
     // Elite Plan Logic (12 months)
-    // Elite gets workout + diet charts
     if (isElite) {
-        // Calculate free trainer period (1 month)
-        const freeTrainerPeriodEnd = new Date(membershipStartDate);
-        freeTrainerPeriodEnd.setMonth(freeTrainerPeriodEnd.getMonth() + 1);
-        freeTrainerPeriodEnd.setHours(23, 59, 59, 999);
-
-        if (!hasTrainerAddon) {
-            // No trainer addon: Trainer uploads for 1 month (free), then admin for remaining period
-            // Check if trainer is actually assigned (trainer_period_end exists and covers free period)
-            if (trainerPeriodEnd && currentDate <= trainerPeriodEnd && currentDate <= freeTrainerPeriodEnd) {
-                return {
-                    shouldUpload: 'trainer',
-                    reason: 'Elite plan - trainer uploads workout+diet charts for free 1 month period',
-                    canTrainerUpload: true,
-                    canAdminUpload: false
-                };
-            } else {
-                // Free period ended or no trainer assigned - admin uploads
-                return {
-                    shouldUpload: 'admin',
-                    reason: 'Elite plan - free trainer period ended or no trainer assigned, admin uploads workout+diet charts',
-                    canTrainerUpload: false,
-                    canAdminUpload: true
-                };
-            }
-        }
-        // Has trainer addon: Trainer uploads for 1 month (free) + 1 month (addon), then admin until renewal
         if (trainerPeriodEnd && currentDate <= trainerPeriodEnd) {
             return {
                 shouldUpload: 'trainer',
-                reason: 'Elite plan with trainer addon - trainer uploads workout+diet charts for 1 month + 1 month',
+                reason: 'Elite plan with active trainer - trainer uploads workout+diet charts',
                 canTrainerUpload: true,
                 canAdminUpload: false
             };
         } else {
             return {
                 shouldUpload: 'admin',
-                reason: 'Elite plan trainer period expired - admin uploads workout+diet charts until renewal',
+                reason: 'Elite plan free trainer period ended or not assigned - admin uploads workout+diet charts',
                 canTrainerUpload: false,
                 canAdminUpload: true
             };
         }
     }
 
-    // Default case
+    // Dynamic fallback for any other custom, corporate, or special membership plan
+    if (trainerPeriodEnd && currentDate <= trainerPeriodEnd) {
+        return {
+            shouldUpload: 'trainer',
+            reason: 'Assigned personal trainer is active - trainer uploads workout and diet charts',
+            canTrainerUpload: true,
+            canAdminUpload: false
+        };
+    }
+
     return {
         shouldUpload: 'admin',
-        reason: 'Unknown plan type - defaulting to admin upload',
+        reason: 'General membership plan - admin uploads charts',
         canTrainerUpload: false,
         canAdminUpload: true
     };
@@ -224,15 +168,15 @@ export function getChartResponsibility(config: ChartResponsibilityConfig): Chart
  * Check if a membership needs workout charts
  */
 export function needsWorkoutCharts(planName: string, hasTrainerAddon: boolean): boolean {
-    const planLower = planName.toLowerCase();
-    const isRegular = planLower.includes('regular');
+    const planLower = (planName || '').toLowerCase().trim();
+    const isRegular = planLower.includes('regular') || planLower.includes('monthly');
     
     // Regular plans only need charts if they have trainer addon
     if (isRegular) {
         return hasTrainerAddon;
     }
     
-    // All other plans (Basic, Premium, Elite) always need workout charts
+    // All other plans (Basic, Premium, Elite, Custom) always need workout charts
     return true;
 }
 
@@ -240,21 +184,27 @@ export function needsWorkoutCharts(planName: string, hasTrainerAddon: boolean): 
  * Check if a membership needs diet charts
  */
 export function needsDietCharts(planName: string, hasTrainerAddon?: boolean): boolean {
-    const planLower = planName.toLowerCase();
-    const isRegular = planLower.includes('regular');
-    const isBasic = planLower === 'basic';
+    // If client has trainer addon or trainer assigned, diet charts are always enabled
+    if (hasTrainerAddon) {
+        return true;
+    }
+
+    const planLower = (planName || '').toLowerCase().trim();
+    const isRegular = planLower.includes('regular') || planLower.includes('monthly');
+    const isBasic = planLower.includes('basic') || planLower.includes('3 month') || planLower.includes('3-month');
     
-    // Basic plans never need diet charts
+    // Basic plans without trainer do not include diet charts
     if (isBasic) {
         return false;
     }
     
-    // Regular plans only need diet charts if they have trainer addon
+    // Regular plans without trainer addon do not include diet charts
     if (isRegular) {
-        return hasTrainerAddon === true;
+        return false;
     }
     
-    // Premium and Elite always need diet charts
+    // Premium, Elite, and all customized plans support diet charts
     return true;
 }
+
 

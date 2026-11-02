@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession } from '@/lib/trainerAuth';
-import { cookies } from 'next/headers';
+import { getTrainerFromRequest } from '@/lib/trainerAuth';
 import { logger } from '@/lib/logger';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -17,16 +16,9 @@ export async function DELETE(
     context: { params: Promise<{ userId: string; messageId: string }> }
 ) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('trainer_token')?.value;
-
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or invalid session' }, { status: 401 });
         }
 
         const { userId, messageId } = await context.params;
@@ -57,17 +49,20 @@ export async function DELETE(
 
         // Send broadcast to refresh messages in both trainer and user chat
         try {
-            const channel = supabaseAdmin.channel(`trainer_messages_${trainer.id}_${userId}`);
-            await channel.subscribe();
-            await new Promise(resolve => setTimeout(resolve, 100));
-            await channel.send({
-                type: 'broadcast',
-                event: 'message_deleted',
-                payload: { messageId }
-            });
-            await channel.unsubscribe();
+            const payload = { messageId };
+            const ch1 = supabaseAdmin.channel(`trainer_messages_${trainer.id}_${userId}`);
+            await ch1.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await ch1.send({ type: 'broadcast', event: 'message_deleted', payload });
+            await ch1.unsubscribe();
+
+            const ch2 = supabaseAdmin.channel(`trainer_messages_user_${trainer.id}_${userId}`);
+            await ch2.subscribe();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await ch2.send({ type: 'broadcast', event: 'message_deleted', payload });
+            await ch2.unsubscribe();
         } catch (err) {
-            logger.error('Error sending broadcast:', err);
+            logger.error('Error sending message_deleted broadcast:', err);
         }
 
         return NextResponse.json({ success: true });

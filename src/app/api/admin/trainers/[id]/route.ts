@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateAdminSession } from '@/lib/adminAuth';
-import { cookies } from 'next/headers';
+import { validateAdminSession, getAdminTokenFromRequest } from '@/lib/adminAuth';
 import { logger } from '@/lib/logger';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -17,8 +16,7 @@ export async function PUT(
     context: { params: Promise<{ id: string }> }
 ) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
 
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
@@ -31,30 +29,32 @@ export async function PUT(
 
         const { id: trainerId } = await context.params;
         const body = await request.json();
-        const { name, phone, email, photo_url, specialization, bio, online_training, in_gym_training, price } = body;
+        const { name, phone, email, photo_url, specialization, bio, online_training, in_gym_training, price, is_active } = body;
 
-        if (!name || !phone) {
-            return NextResponse.json({ error: 'Name and phone are required' }, { status: 400 });
+        // If not updating is_active and not updating any profile fields, return 400
+        if (!name && !phone && is_active === undefined && specialization === undefined && bio === undefined && price === undefined) {
+            return NextResponse.json({ error: 'At least one field to update is required' }, { status: 400 });
         }
 
         const updateData: any = {
-            name,
-            phone,
-            email: email || null,
-            photo_url: photo_url || null,
-            specialization: specialization || null,
-            bio: bio || null,
-            online_training: online_training || false,
-            in_gym_training: in_gym_training || false,
-            price: price ? parseFloat(price) : null,
             updated_at: new Date().toISOString()
         };
+        if (name) updateData.name = name;
+        if (phone) updateData.phone = phone;
+        if (email !== undefined) updateData.email = email || null;
+        if (photo_url !== undefined) updateData.photo_url = photo_url || null;
+        if (specialization !== undefined) updateData.specialization = specialization || null;
+        if (bio !== undefined) updateData.bio = bio || null;
+        if (online_training !== undefined) updateData.online_training = Boolean(online_training);
+        if (in_gym_training !== undefined) updateData.in_gym_training = Boolean(in_gym_training);
+        if (price !== undefined) updateData.price = price !== null ? parseFloat(price) : null;
+        if (is_active !== undefined) updateData.is_active = Boolean(is_active);
 
         const { data: trainer, error: updateError } = await supabaseAdmin
             .from('trainers')
             .update(updateData)
             .eq('id', trainerId)
-            .select('id, name, phone, email, photo_url, specialization, bio, online_training, in_gym_training')
+            .select('id, name, phone, email, photo_url, specialization, bio, online_training, in_gym_training, price, is_active')
             .single();
 
         if (updateError) {
@@ -65,7 +65,7 @@ export async function PUT(
             throw updateError;
         }
 
-        logger.info(`Admin ${admin.email} updated trainer ${trainer.name}`);
+        logger.info(`Admin ${admin.email} updated trainer ${trainer.name || trainerId}`);
 
         return NextResponse.json({
             success: true,
@@ -86,8 +86,7 @@ export async function DELETE(
     context: { params: Promise<{ id: string }> }
 ) {
     try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
 
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });

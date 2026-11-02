@@ -211,6 +211,17 @@ export async function GET(request: NextRequest) {
 
             // For Regular Monthly plans with expired membership, hide trainer info
             const shouldHideTrainer = isRegularMonthly && trainerName === null && membership.trainer_assigned;
+
+            const latestPayment = allPayments[0];
+            const isLatestRejected = latestPayment?.status === 'rejected';
+            const isLatestPending = latestPayment?.status === 'pending';
+            const verifiedAmount = verifiedPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+            const resolvedPaymentAmount = isLatestRejected
+                ? (verifiedAmount > 0 ? verifiedAmount : (membership.status === 'active' || membership.status === 'expired' ? basePrice : null))
+                : (latestPayment?.amount ? parseFloat(latestPayment.amount) : (verifiedAmount > 0 ? verifiedAmount : null));
+            const resolvedRejectionReason = isLatestRejected
+                ? (latestPayment?.rejection_reason || membership.admin_notes || membership.form_data?.rejection_reason || null)
+                : (membership.admin_notes || membership.form_data?.rejection_reason || null);
             
             return {
                 ...membership,
@@ -218,7 +229,12 @@ export async function GET(request: NextRequest) {
                 user_name: profile?.full_name || 'Unknown User',
                 transaction_id: payment?.transaction_id || null,
                 payment_date: payment?.payment_date || null,
-                payment_amount: payment?.amount || null, // Full payment amount including addons
+                payment_amount: resolvedPaymentAmount, // Verified amount or pending payment amount (not rejected amount)
+                latest_payment_status: latestPayment?.status || null,
+                latest_payment_amount: latestPayment?.amount ? parseFloat(latestPayment.amount) : null,
+                latest_payment_id: latestPayment?.id || null,
+                rejection_reason: resolvedRejectionReason,
+                verified_amount: verifiedAmount,
                 payment_screenshot_url: payment?.payment_screenshot_url || null,
                 form_data: membership.form_data || null, // Include form data
                 trainer_name: trainerName, // Add trainer name (null for expired Regular Monthly plans)

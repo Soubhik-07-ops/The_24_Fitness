@@ -1,7 +1,7 @@
 // src/app/api/trainer/weekly-charts/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession } from '@/lib/trainerAuth';
+import { getTrainerFromRequest } from '@/lib/trainerAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -16,14 +16,9 @@ export async function PUT(
     context: { params: Promise<{ id: string }> }
 ) {
     try {
-        const token = request.cookies.get('trainer_token')?.value;
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired trainer session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or session expired' }, { status: 401 });
         }
 
         const { id } = await context.params;
@@ -116,14 +111,9 @@ export async function DELETE(
     context: { params: Promise<{ id: string }> }
 ) {
     try {
-        const token = request.cookies.get('trainer_token')?.value;
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired trainer session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or session expired' }, { status: 401 });
         }
 
         const { id } = await context.params;

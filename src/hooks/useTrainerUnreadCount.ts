@@ -56,27 +56,45 @@ export function useTrainerUnreadCount(): number {
                         event: 'INSERT',
                         schema: 'public',
                         table: 'trainer_messages',
-                        filter: `trainer_id=eq.${trainerId} AND is_trainer=eq.false`
-                    }, () => {
-                        // Reload count when new message arrives
-                        if (mounted) {
-                            fetchUnreadCount();
+                        filter: `trainer_id=eq.${trainerId}`
+                    }, (payload: any) => {
+                        const row = payload.new as any;
+                        if (!row || row.is_trainer === false) {
+                            if (mounted) fetchUnreadCount();
                         }
                     })
                     .on('postgres_changes', {
                         event: 'UPDATE',
                         schema: 'public',
                         table: 'trainer_messages',
-                        filter: `trainer_id=eq.${trainerId} AND is_trainer=eq.false`
-                    }, () => {
-                        // Reload count when message is read
-                        if (mounted) {
-                            fetchUnreadCount();
+                        filter: `trainer_id=eq.${trainerId}`
+                    }, (payload: any) => {
+                        const row = payload.new as any;
+                        if (!row || row.is_trainer === false) {
+                            if (mounted) fetchUnreadCount();
                         }
+                    })
+                    .on('broadcast', { event: 'new_message' }, () => {
+                        if (mounted) fetchUnreadCount();
+                    })
+                    .on('broadcast', { event: 'conversation_updated' }, () => {
+                        if (mounted) fetchUnreadCount();
+                    })
+                    .subscribe();
+
+                // Also subscribe to trainer's notification channel for message events
+                const notifyChannel = supabase
+                    .channel(`notify_trainer_${trainerId}`)
+                    .on('broadcast', { event: 'new_message' }, () => {
+                        if (mounted) fetchUnreadCount();
+                    })
+                    .on('broadcast', { event: 'conversation_updated' }, () => {
+                        if (mounted) fetchUnreadCount();
                     })
                     .subscribe();
 
                 channelRef.current = channel;
+                (channelRef.current as any).notifyChannel = notifyChannel;
             } catch (error) {
                 console.error('Error initializing message count:', error);
             }
@@ -87,6 +105,9 @@ export function useTrainerUnreadCount(): number {
         return () => {
             mounted = false;
             if (channelRef.current) {
+                if ((channelRef.current as any).notifyChannel) {
+                    supabase.removeChannel((channelRef.current as any).notifyChannel);
+                }
                 supabase.removeChannel(channelRef.current);
             }
         };

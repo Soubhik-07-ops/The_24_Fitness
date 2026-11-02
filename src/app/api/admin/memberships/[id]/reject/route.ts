@@ -27,23 +27,78 @@ export async function POST(
         }
 
         const { id } = await context.params;
-        const membershipId = parseInt(id);
-        if (isNaN(membershipId)) {
-            return NextResponse.json({ error: 'Invalid membership ID' }, { status: 400 });
+        const parsedId = parseInt(id);
+        if (isNaN(parsedId)) {
+            return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
         }
 
-        const body = await request.json();
+        const body = await request.json().catch(() => ({}));
         const reason = body.reason || 'No reason provided';
+        const specificPaymentId = body.paymentId ? parseInt(body.paymentId) : null;
 
-        // Get membership details
-        const { data: membership, error: membershipError } = await supabaseAdmin
+        // Resolve membership and target payment
+        let membership: any = null;
+        let targetPayment: any = null;
+
+        // 1. Try finding membership with parsedId
+        const { data: memData } = await supabaseAdmin
             .from('memberships')
             .select('*')
-            .eq('id', membershipId)
-            .single();
+            .eq('id', parsedId)
+            .maybeSingle();
 
-        if (membershipError || !membership) {
-            return NextResponse.json({ error: 'Membership not found' }, { status: 404 });
+        if (memData) {
+            membership = memData;
+        } else {
+            // 2. Fallback: check if parsedId was actually a payment ID
+            const { data: payData } = await supabaseAdmin
+                .from('membership_payments')
+                .select('*')
+                .eq('id', parsedId)
+                .maybeSingle();
+
+            if (payData) {
+                targetPayment = payData;
+                const { data: relatedMem } = await supabaseAdmin
+                    .from('memberships')
+                    .select('*')
+                    .eq('id', payData.membership_id)
+                    .maybeSingle();
+                membership = relatedMem;
+            }
+        }
+
+        if (!membership) {
+            return NextResponse.json({ error: 'Membership or Payment record not found' }, { status: 404 });
+        }
+
+        const membershipId = membership.id;
+
+        // If targetPayment not determined yet, find specified paymentId or latest pending payment
+        if (!targetPayment && specificPaymentId && !isNaN(specificPaymentId)) {
+            const { data: specPay } = await supabaseAdmin
+                .from('membership_payments')
+                .select('*')
+                .eq('id', specificPaymentId)
+                .eq('membership_id', membershipId)
+                .maybeSingle();
+            targetPayment = specPay;
+        }
+
+        if (!targetPayment) {
+            const { data: latestPending } = await supabaseAdmin
+                .from('membership_payments')
+                .select('*')
+                .eq('membership_id', membershipId)
+                .eq('status', 'pending')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            targetPayment = latestPending;
+        }
+
+        if (!targetPayment) {
+            return NextResponse.json({ error: 'No pending payment found to reject for this membership' }, { status: 404 });
         }
 
         // Get admin's auth user ID for audit trail
@@ -59,18 +114,7 @@ export async function POST(
         }
 
         const previousStatus = membership.status;
-
-        // Trace pending payment to distinguish renewal from initial registration
-        const { data: pendingPayment } = await supabaseAdmin
-            .from('membership_payments')
-            .select('*')
-            .eq('membership_id', membershipId)
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-        const isRenewalPayment = pendingPayment?.payment_purpose === 'membership_renewal';
+        const isRenewalPayment = targetPayment.payment_purpose === 'membership_renewal';
         const endDateStr = membership.membership_end_date || membership.end_date;
         const now = new Date();
         const hasFutureExpiry = endDateStr ? new Date(endDateStr) > now : false;
@@ -83,47 +127,73 @@ export async function POST(
             isGracePeriod = diffDays <= 5;
         }
 
+        // Update ONLY the targeted payment record to rejected (membership_payments does not have a rejection_reason column)
+        const { error: paymentUpdateError } = await supabaseAdmin
+            .from('membership_payments')
+            .update({
+                status: 'rejected',
+                verified_by: adminAuthUserId,
+                verified_at: new Date().toISOString()
+            })
+            .eq('id', targetPayment.id);
+
+        if (paymentUpdateError) {
+            console.error('[REJECT] Error updating payment record:', paymentUpdateError);
+            return NextResponse.json({ error: 'Failed to update payment record status' }, { status: 500 });
+        }
+
+        // Check if other genuine pending payments exist on this membership
+        const { data: remainingPending } = await supabaseAdmin
+            .from('membership_payments')
+            .select('id')
+            .eq('membership_id', membershipId)
+            .eq('status', 'pending');
+
+        const hasRemainingPending = remainingPending && remainingPending.length > 0;
+
+        // Check if user has any verified historical payments
+        const { count: verifiedCount } = await supabaseAdmin
+            .from('membership_payments')
+            .select('id', { count: 'exact', head: true })
+            .eq('membership_id', membershipId)
+            .eq('status', 'verified');
+
+        const hasHistoricalVerified = (verifiedCount || 0) > 0;
+
         // Determine safe target membership status:
-        // NEVER revoke active access or set membership status to 'rejected' when an active member's renewal payment is rejected!
         let newStatus = 'rejected';
-        if (isRenewalPayment || hasFutureExpiry) {
+        if (hasRemainingPending) {
+            newStatus = 'pending'; // Remain pending if another payment is still under review
+        } else if (hasHistoricalVerified || isRenewalPayment || hasFutureExpiry) {
             if (hasFutureExpiry) {
-                newStatus = 'active'; // Member still has valid paid days remaining!
+                newStatus = 'active'; // Member still has valid paid days remaining
             } else if (isGracePeriod) {
-                newStatus = 'grace_period'; // Member is still within grace period window
+                newStatus = 'grace_period'; // Member is in grace period window
             } else {
-                newStatus = 'expired';
+                newStatus = 'expired'; // Expired membership restored to expired for reactivation
             }
         }
 
-        // Clean up temporary renewal_pending_plan from form_data on rejection
+        // Clean up temporary renewal_pending_plan from form_data on rejection and store rejection reason
         const cleanFormData = (typeof membership.form_data === 'object' && membership.form_data !== null) ? { ...membership.form_data } : {};
         delete cleanFormData.renewal_pending_plan;
+        if (reason) {
+            cleanFormData.rejection_reason = reason;
+        }
 
         // Update membership status safely
         const { error: updateError } = await supabaseAdmin
             .from('memberships')
             .update({
                 status: newStatus,
+                admin_notes: reason ? `Rejected: ${reason}` : membership.admin_notes,
                 form_data: cleanFormData,
                 updated_at: new Date().toISOString()
             })
             .eq('id', membershipId);
 
-        // Update pending payments for this membership to rejected with reason
-        await supabaseAdmin
-            .from('membership_payments')
-            .update({
-                status: 'rejected',
-                verified_by: adminAuthUserId,
-                verified_at: new Date().toISOString(),
-                rejection_reason: reason
-            })
-            .eq('membership_id', membershipId)
-            .eq('status', 'pending');
-
-        // Cancel pending renewal addons or assignments so they can be re-selected on retry
-        if (isRenewalPayment || hasFutureExpiry) {
+        // Cancel pending renewal addons or assignments for this rejected renewal
+        if (!hasRemainingPending && (isRenewalPayment || hasFutureExpiry || hasHistoricalVerified)) {
             await supabaseAdmin
                 .from('membership_addons')
                 .update({ status: 'cancelled' })
@@ -214,7 +284,10 @@ export async function POST(
 
         return NextResponse.json({
             success: true,
-            message: 'Membership rejected successfully'
+            message: 'Payment rejected successfully',
+            paymentId: targetPayment.id,
+            membershipId,
+            status: newStatus
         });
     } catch (err: any) {
         return NextResponse.json(

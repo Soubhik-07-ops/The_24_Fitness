@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, useInView } from 'framer-motion'
-import { Check, Star, ChevronLeft, ChevronRight, Users } from 'lucide-react'
+import { Check, Star, ChevronLeft, ChevronRight, Users, AlertCircle } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import styles from './MembershipPlans.module.css'
@@ -175,18 +175,10 @@ export default function MembershipPlans() {
     const [activeRegularIndex, setActiveRegularIndex] = useState(0)
     const hasUserManuallyToggledGender = useRef(false)
 
-    const [selectedGender, setSelectedGender] = useState<'boys' | 'girls'>(() => {
-        if (typeof window !== 'undefined') {
-            const urlG = new URLSearchParams(window.location.search).get('gender')?.toLowerCase()
-            if (urlG === 'girls' || urlG === 'female') return 'girls'
-            if (urlG === 'boys' || urlG === 'male') return 'boys'
-            const saved = sessionStorage.getItem('the24_selected_gender')
-            if (saved === 'girls' || saved === 'boys') return saved
-        }
-        return 'boys'
-    })
+    const [selectedGender, setSelectedGender] = useState<'boys' | 'girls'>('boys')
     const [userMembership, setUserMembership] = useState<any>(null)
     const [hasPendingPayment, setHasPendingPayment] = useState<boolean>(false)
+    const [rejectedPaymentNotice, setRejectedPaymentNotice] = useState<{ reason: string; amount?: number } | null>(null)
     const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true)
     const [userGender, setUserGender] = useState<'boys' | 'girls'>('boys')
     const [isMounted, setIsMounted] = useState<boolean>(false)
@@ -196,7 +188,7 @@ export default function MembershipPlans() {
         setSelectedGender(gender)
         try {
             sessionStorage.setItem('the24_selected_gender', gender)
-        } catch {}
+        } catch { }
     }
 
     const currentPlans = selectedGender === 'boys' ? boysPlans : girlsPlans
@@ -208,6 +200,21 @@ export default function MembershipPlans() {
         onResize()
         window.addEventListener('resize', onResize)
 
+        // Read URL param or cached gender from sessionStorage after mount (prevents SSR hydration mismatch)
+        try {
+            const urlG = new URLSearchParams(window.location.search).get('gender')?.toLowerCase()
+            if (urlG === 'girls' || urlG === 'female') {
+                setSelectedGender('girls')
+            } else if (urlG === 'boys' || urlG === 'male') {
+                setSelectedGender('boys')
+            } else {
+                const saved = sessionStorage.getItem('the24_selected_gender')
+                if (saved === 'girls' || saved === 'boys') {
+                    setSelectedGender(saved)
+                }
+            }
+        } catch { }
+
         // Read cached membership from sessionStorage immediately upon mounting
         try {
             const cached = sessionStorage.getItem('the24_user_membership')
@@ -218,7 +225,7 @@ export default function MembershipPlans() {
             if (sessionStorage.getItem('the24_has_pending_payment') === 'true') {
                 setHasPendingPayment(true)
             }
-        } catch {}
+        } catch { }
 
         return () => window.removeEventListener('resize', onResize)
     }, [])
@@ -238,7 +245,7 @@ export default function MembershipPlans() {
                     try {
                         sessionStorage.removeItem('the24_user_membership')
                         sessionStorage.removeItem('the24_has_pending_payment')
-                    } catch {}
+                    } catch { }
                     return
                 }
 
@@ -288,32 +295,46 @@ export default function MembershipPlans() {
                     const currentSub = memberships.find(m => m.status === 'active' || m.status === 'approved')
                         || memberships.find(m => m.status === 'grace_period')
                         || memberships.find(m => m.status === 'pending')
+                        || memberships.find(m => m.status === 'expired')
+                        || memberships.find(m => m.status === 'rejected')
                         || memberships[0]
 
                     setUserMembership(currentSub)
                     try {
                         sessionStorage.setItem('the24_user_membership', JSON.stringify(currentSub))
-                    } catch {}
+                    } catch { }
 
                     if (currentSub) {
-                        const { data: pendingPayments } = await supabase
+                        const { data: payments } = await supabase
                             .from('membership_payments')
-                            .select('id')
+                            .select('id, status, amount, created_at, rejection_reason')
                             .eq('membership_id', currentSub.id)
-                            .eq('status', 'pending')
-                            .limit(1)
+                            .order('created_at', { ascending: false })
 
-                        if (isMounted && pendingPayments && pendingPayments.length > 0) {
-                            setHasPendingPayment(true)
-                            try { sessionStorage.setItem('the24_has_pending_payment', 'true') } catch {}
-                        } else if (isMounted) {
-                            setHasPendingPayment(false)
-                            try { sessionStorage.setItem('the24_has_pending_payment', 'false') } catch {}
+                        const pendingPayment = payments?.find(p => p.status === 'pending')
+                        const latestPayment = payments?.[0]
+
+                        if (isMounted) {
+                            if (pendingPayment) {
+                                setHasPendingPayment(true)
+                                try { sessionStorage.setItem('the24_has_pending_payment', 'true') } catch { }
+                            } else {
+                                setHasPendingPayment(false)
+                                try { sessionStorage.setItem('the24_has_pending_payment', 'false') } catch { }
+                            }
+
+                            if (latestPayment?.status === 'rejected') {
+                                const reason = latestPayment.rejection_reason || currentSub.admin_notes || currentSub.form_data?.rejection_reason || 'Payment verification was not approved'
+                                setRejectedPaymentNotice({ reason, amount: latestPayment.amount })
+                            } else {
+                                setRejectedPaymentNotice(null)
+                            }
                         }
                     }
                 } else if (isMounted) {
                     setUserMembership(null)
-                    try { sessionStorage.removeItem('the24_user_membership') } catch {}
+                    setRejectedPaymentNotice(null)
+                    try { sessionStorage.removeItem('the24_user_membership') } catch { }
                 }
             } catch (err) {
                 console.warn('[MembershipPlans] Error loading user membership:', err)
@@ -331,7 +352,8 @@ export default function MembershipPlans() {
     // Identify if a plan card matches the member's current active membership
     const isMatchingActivePlan = (plan: Plan): boolean => {
         if (!userMembership) return false
-        if (userMembership.status !== 'active' && userMembership.status !== 'approved') return false
+        const status = (userMembership.status || '').toLowerCase()
+        if (status !== 'active' && status !== 'approved' && status !== 'expired' && status !== 'grace_period' && status !== 'pending') return false
 
         const memPlan = (userMembership.plan_name || '').toLowerCase()
         const memType = (userMembership.plan_type || '').toLowerCase()
@@ -406,6 +428,7 @@ export default function MembershipPlans() {
 
         const isCurrent = isMatchingActivePlan(plan)
         const elig = getEligibility()
+        const isUserActive = (userMembership.status === 'active' || userMembership.status === 'approved') && !elig.isExpired
 
         if (elig.isPending) {
             return {
@@ -416,16 +439,42 @@ export default function MembershipPlans() {
             }
         }
 
-        if (isCurrent) {
-            if (elig.isExpired) {
+        if (isUserActive) {
+            if (isCurrent) {
+                if (elig.isRenewalEligible) {
+                    return {
+                        text: 'Renew Now',
+                        disabled: false,
+                        className: styles.buttonRenew,
+                        actionType: 'renew'
+                    }
+                }
                 return {
-                    text: 'Reactivate Plan',
-                    disabled: false,
-                    className: styles.buttonReactivate,
-                    actionType: 'reactivate'
+                    text: `Active Plan (${elig.daysRemaining}d left)`,
+                    disabled: true,
+                    className: styles.buttonDisabled,
+                    actionType: 'active'
+                }
+            } else {
+                if (elig.isRenewalEligible) {
+                    return {
+                        text: 'Switch & Renew',
+                        disabled: false,
+                        className: styles.buttonSwitch,
+                        actionType: 'switch'
+                    }
+                }
+                return {
+                    text: 'Current Plan Active',
+                    disabled: true,
+                    className: styles.buttonDisabled,
+                    actionType: 'locked'
                 }
             }
-            if (elig.isGracePeriod) {
+        }
+
+        if (elig.isGracePeriod) {
+            if (isCurrent) {
                 return {
                     text: 'Renew Now (Grace Period)',
                     disabled: false,
@@ -433,45 +482,36 @@ export default function MembershipPlans() {
                     actionType: 'renew'
                 }
             }
-            if (elig.isRenewalEligible) {
-                return {
-                    text: 'Renew Now',
-                    disabled: false,
-                    className: styles.buttonRenew,
-                    actionType: 'renew'
-                }
-            }
-            // Active, not yet due for renewal (> 15 days)
             return {
-                text: `Active Plan (${elig.daysRemaining}d left)`,
-                disabled: true,
-                className: styles.buttonDisabled,
-                actionType: 'active'
+                text: 'Switch & Renew',
+                disabled: false,
+                className: styles.buttonSwitch,
+                actionType: 'switch'
             }
-        } else {
-            // Non-active plan card
-            if (elig.isExpired) {
+        }
+
+        if (elig.isExpired) {
+            if (isCurrent) {
                 return {
-                    text: 'Switch & Reactivate',
+                    text: 'Reactivate Plan',
                     disabled: false,
-                    className: styles.buttonSwitch,
-                    actionType: 'switch'
-                }
-            }
-            if (elig.isRenewalEligible) {
-                return {
-                    text: 'Switch & Renew',
-                    disabled: false,
-                    className: styles.buttonSwitch,
-                    actionType: 'switch'
+                    className: styles.buttonReactivate,
+                    actionType: 'reactivate'
                 }
             }
             return {
-                text: 'Current Plan Active',
-                disabled: true,
-                className: styles.buttonDisabled,
-                actionType: 'locked'
+                text: 'Switch & Reactivate',
+                disabled: false,
+                className: styles.buttonSwitch,
+                actionType: 'switch'
             }
+        }
+
+        return {
+            text: 'Select Plan',
+            disabled: false,
+            className: plan.popular ? styles.buttonPopular : plan.name === 'Basic' ? styles.buttonBasic : styles.buttonElite,
+            actionType: 'initial'
         }
     }
 
@@ -714,6 +754,31 @@ export default function MembershipPlans() {
                         Girls Plans
                     </button>
                 </motion.div>
+
+                {/* Rejection Alert Banner */}
+                {rejectedPaymentNotice && (
+                    <div style={{
+                        maxWidth: '900px',
+                        margin: '0 auto 1.5rem auto',
+                        padding: '1rem 1.25rem',
+                        borderRadius: '0.75rem',
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.875rem'
+                    }}>
+                        <div style={{ color: '#ef4444', flexShrink: 0 }}>
+                            <AlertCircle size={22} />
+                        </div>
+                        <div style={{ flex: 1, color: '#fca5a5', fontSize: '0.9rem', lineHeight: '1.4' }}>
+                            <strong style={{ color: '#f87171', display: 'block', fontSize: '0.95rem', marginBottom: '0.2rem' }}>
+                                Payment Verification Notice
+                            </strong>
+                            Your recent payment proof was rejected ({rejectedPaymentNotice.reason}). You can select any plan below to re-submit your payment proof with a valid 12-digit UPI UTR number.
+                        </div>
+                    </div>
+                )}
 
                 {/* Plans Grid */}
                 <div className={styles.controlsRow}>

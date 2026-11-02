@@ -32,27 +32,52 @@ export async function POST(
         }
 
         const { id } = await context.params;
-        const membershipId = parseInt(id);
-        if (isNaN(membershipId)) {
-            return NextResponse.json({ error: 'Invalid membership ID' }, { status: 400 });
+        const targetId = parseInt(id);
+        if (isNaN(targetId)) {
+            return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
         }
 
-        // Get membership details
-        const { data: membership, error: membershipError } = await supabaseAdmin
+        const body = await request.json().catch(() => ({}));
+        let explicitPaymentId = body?.paymentId ? parseInt(body.paymentId) : null;
+
+        // Try finding membership by membership ID first
+        let { data: membership, error: membershipError } = await supabaseAdmin
             .from('memberships')
             .select('*')
-            .eq('id', membershipId)
-            .single();
+            .eq('id', targetId)
+            .maybeSingle();
+
+        // If not found, targetId might be a payment ID from payments review screen
+        if (!membership) {
+            const { data: payment } = await supabaseAdmin
+                .from('membership_payments')
+                .select('*')
+                .eq('id', targetId)
+                .maybeSingle();
+
+            if (payment?.membership_id) {
+                explicitPaymentId = payment.id;
+                const { data: foundMem } = await supabaseAdmin
+                    .from('memberships')
+                    .select('*')
+                    .eq('id', payment.membership_id)
+                    .maybeSingle();
+                membership = foundMem;
+            }
+        }
 
         if (membershipError || !membership) {
             return NextResponse.json({ error: 'Membership not found' }, { status: 404 });
         }
 
+        const membershipId = membership.id;
+
         // Validate membership status before approval
-        // Allow approval for 'pending' (new purchase) or 'grace_period' (renewal)
-        if (membership.status !== 'pending' && membership.status !== 'grace_period') {
+        // Allow approval for 'pending' (new purchase or renewal), 'grace_period' (renewal), or 'expired' (reactivation)
+        const validStatuses = ['pending', 'grace_period', 'expired'];
+        if (!validStatuses.includes(membership.status)) {
             return NextResponse.json({
-                error: `Cannot approve membership. Current status is '${membership.status}'. Only memberships with 'pending' (new purchase) or 'grace_period' (renewal) status can be approved.`,
+                error: `Cannot approve membership. Current status is '${membership.status}'. Only memberships with 'pending', 'grace_period', or 'expired' (reactivation) status can be approved.`,
                 currentStatus: membership.status
             }, { status: 400 });
         }
@@ -90,16 +115,31 @@ export async function POST(
             isRenewal = Boolean(allPayments && allPayments.length > 1);
         }
 
-        // Verify payment - for both renewals and new memberships
-        // Find the most recent pending payment (could be renewal or initial payment)
-        const { data: pendingPayment } = await supabaseAdmin
-            .from('membership_payments')
-            .select('*')
-            .eq('membership_id', membershipId)
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
+        // Verify payment - for renewals, reactivations, and new memberships
+        // If explicitPaymentId was provided/resolved, use that specific payment; otherwise find most recent pending
+        let pendingPayment: any = null;
+        if (explicitPaymentId && !isNaN(explicitPaymentId)) {
+            const { data: specPayment } = await supabaseAdmin
+                .from('membership_payments')
+                .select('*')
+                .eq('id', explicitPaymentId)
+                .maybeSingle();
+            if (specPayment && specPayment.status === 'pending') {
+                pendingPayment = specPayment;
+            }
+        }
+
+        if (!pendingPayment) {
+            const { data: recentPending } = await supabaseAdmin
+                .from('membership_payments')
+                .select('*')
+                .eq('membership_id', membershipId)
+                .eq('status', 'pending')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            pendingPayment = recentPending;
+        }
 
         if (pendingPayment) {
             // First, reject all other pending payments for this membership (to prevent multiple approvals)
@@ -330,12 +370,12 @@ export async function POST(
             .eq('membership_id', membershipId)
             .eq('status', 'pending');
 
-        // Use conditional update to prevent race conditions - only update if still 'pending' or 'grace_period'
+        // Use conditional update to prevent race conditions - allow valid approved statuses ('pending', 'grace_period', 'expired')
         const { error: updateError, data: updatedMembership } = await supabaseAdmin
             .from('memberships')
             .update(updateData)
             .eq('id', membershipId)
-            .in('status', ['pending', 'grace_period']) // Only update if still pending or grace_period (prevents race conditions)
+            .in('status', ['pending', 'grace_period', 'expired'])
             .select()
             .single();
 

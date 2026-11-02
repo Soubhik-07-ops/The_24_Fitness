@@ -1,7 +1,7 @@
 // src/app/api/trainer/weekly-charts/generate-ai/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateTrainerSession } from '@/lib/trainerAuth';
+import { getTrainerFromRequest } from '@/lib/trainerAuth';
 import { getChartResponsibility, needsWorkoutCharts, needsDietCharts } from '@/lib/chartResponsibility';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -15,14 +15,9 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 // POST: Generate chart using AI (Trainer)
 export async function POST(request: NextRequest) {
     try {
-        const token = request.cookies.get('trainer_token')?.value;
-        if (!token) {
-            return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-        }
-
-        const trainer = await validateTrainerSession(token);
+        const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ error: 'Invalid or expired trainer session' }, { status: 401 });
+            return NextResponse.json({ error: 'Not authenticated or invalid trainer session' }, { status: 401 });
         }
 
         if (!openRouterApiKey) {
@@ -125,7 +120,9 @@ export async function POST(request: NextRequest) {
         });
 
         // Check if trainer can upload based on chart responsibility
-        if (!chartResp.canTrainerUpload || chartResp.shouldUpload !== 'trainer') {
+        const hasActiveTrainerAccess = Boolean(hasTrainerAddon || isPeriodActive || isInGracePeriod);
+
+        if (!isPeriodActive && !isInGracePeriod && (!chartResp.canTrainerUpload || chartResp.shouldUpload !== 'trainer')) {
             return NextResponse.json(
                 { error: `You cannot upload charts for this membership. ${chartResp.reason}` },
                 { status: 403 }
@@ -133,14 +130,14 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if chart type is allowed
-        if (chart_type === 'diet' && !needsDietCharts(membership.plan_name, hasTrainerAddon)) {
+        if (chart_type === 'diet' && !needsDietCharts(membership.plan_name, hasActiveTrainerAccess)) {
             return NextResponse.json(
-                { error: 'This plan type does not include diet charts.' },
+                { error: 'This plan type without trainer access does not include diet charts.' },
                 { status: 400 }
             );
         }
 
-        if (chart_type === 'workout' && !needsWorkoutCharts(membership.plan_name, hasTrainerAddon)) {
+        if (chart_type === 'workout' && !needsWorkoutCharts(membership.plan_name, hasActiveTrainerAccess)) {
             return NextResponse.json(
                 { error: 'This plan type does not include workout charts.' },
                 { status: 400 }
