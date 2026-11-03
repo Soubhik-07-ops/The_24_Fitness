@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { UserProfile, ProfileFormData } from '@/types/profile';
 import styles from './Profile.module.css';
-import { User, Phone, Calendar, Target, Heart, UserCheck, Save, Edit, Camera, Loader2, Trash2, Mail, Lock, Key, Eye, EyeOff } from 'lucide-react';
+import { User, Phone, Calendar, Target, Heart, UserCheck, Save, Edit, Camera, Loader2, Trash2, Mail, Lock, Key, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { validatePassword, getPasswordRequirements } from '@/lib/passwordValidation';
 import Toast from '@/components/Toast/Toast';
 import { useToast } from '@/hooks/useToast';
@@ -18,6 +18,7 @@ export default function Profile() {
     const [saving, setSaving] = useState(false);
     const [editing, setEditing] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [uploadSuccess, setUploadSuccess] = useState(false);
     const [deletingAvatar, setDeletingAvatar] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -170,6 +171,7 @@ export default function Profile() {
             }
 
             setUploading(true);
+            setUploadSuccess(false);
             setImageError(false);
             const { data: { session } } = await supabase.auth.getSession();
             if (!session?.user) {
@@ -207,6 +209,7 @@ export default function Profile() {
 
             setAvatarKey(prev => prev + 1);
             await fetchProfile(session.user.id);
+            setUploadSuccess(true);
             showToast('Profile picture updated successfully! 🎉', 'success');
 
         } catch (error: any) {
@@ -460,6 +463,28 @@ export default function Profile() {
                                 </button>
                             )}
                         </div>
+
+                        {/* Upload Status Box */}
+                        {uploading && (
+                            <div className={styles.uploadStatusBox}>
+                                <Loader2 className={styles.spinner} size={20} />
+                                <div className={styles.uploadStatusText}>
+                                    <strong>Uploading image... Please wait</strong>
+                                    <p>Processing image for profile and mobile app</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Upload Success Box */}
+                        {uploadSuccess && !uploading && (
+                            <div className={styles.uploadSuccessBox}>
+                                <CheckCircle2 size={20} className={styles.uploadSuccessIcon} />
+                                <div className={styles.uploadStatusText}>
+                                    <strong>Image uploaded successfully! 🎉</strong>
+                                    <p>Your profile picture is updated across the website and mobile app</p>
+                                </div>
+                            </div>
+                        )}
 
                         <div className={styles.fileInfo}>
                             <p>Maximum file size: 5MB</p>
