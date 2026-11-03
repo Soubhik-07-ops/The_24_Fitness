@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
                         fullName: admin.full_name || 'System Admin',
                         email: admin.email || '',
                         gender: 'MALE',
+                        avatarUrl: admin.photo_url || undefined,
                         joinedDate: new Date().toISOString()
                     }
                 });

@@ -9,11 +9,21 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
     auth: { autoRefreshToken: false, persistSession: false }
 });
 
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-trainer-token',
+};
+
+export async function OPTIONS() {
+    return NextResponse.json({}, { headers: corsHeaders });
+}
+
 export async function POST(request: NextRequest) {
     try {
         const trainer = await getTrainerFromRequest(request);
         if (!trainer) {
-            return NextResponse.json({ success: false, error: 'Not authenticated or session expired' }, { status: 401 });
+            return NextResponse.json({ success: false, error: 'Not authenticated or session expired' }, { status: 401, headers: corsHeaders });
         }
 
         // Get form data with file
@@ -22,17 +32,17 @@ export async function POST(request: NextRequest) {
         const oldImageUrl = formData.get('oldImageUrl') as string | null;
 
         if (!file) {
-            return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400 });
+            return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400, headers: corsHeaders });
         }
 
         // Validate file type
         if (!file.type.startsWith('image/')) {
-            return NextResponse.json({ success: false, error: 'File must be an image (JPEG, PNG, WebP)' }, { status: 400 });
+            return NextResponse.json({ success: false, error: 'File must be an image (JPEG, PNG, WebP)' }, { status: 400, headers: corsHeaders });
         }
 
         // Validate file size (5MB)
         if (file.size > 5 * 1024 * 1024) {
-            return NextResponse.json({ success: false, error: 'File size must be less than 5MB' }, { status: 400 });
+            return NextResponse.json({ success: false, error: 'File size must be less than 5MB' }, { status: 400, headers: corsHeaders });
         }
 
         // Delete old image if provided
@@ -50,7 +60,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Generate unique filename
-        const fileExt = file.name.split('.').pop();
+        const fileExt = file.name.split('.').pop() || 'jpg';
         const fileName = `trainers/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
 
         // Convert File to ArrayBuffer for upload
@@ -69,7 +79,7 @@ export async function POST(request: NextRequest) {
         if (uploadError) {
             return NextResponse.json(
                 { success: false, error: `Failed to upload image: ${uploadError.message}` },
-                { status: 500 }
+                { status: 500, headers: corsHeaders }
             );
         }
 
@@ -78,15 +88,27 @@ export async function POST(request: NextRequest) {
             .from('class-images')
             .getPublicUrl(fileName);
 
+        const cacheBustedUrl = `${publicUrl}?t=${Date.now()}`;
+
+        // Auto-update trainer's photo_url in trainers table
+        try {
+            await supabaseAdmin
+                .from('trainers')
+                .update({ photo_url: cacheBustedUrl, updated_at: new Date().toISOString() })
+                .eq('id', trainer.id);
+        } catch (trainerUpdateErr) {
+            console.warn('[Trainer Upload Photo] Non-fatal trainers table update warning:', trainerUpdateErr);
+        }
+
         return NextResponse.json({
             success: true,
-            imageUrl: publicUrl
-        });
+            imageUrl: cacheBustedUrl,
+            avatarUrl: cacheBustedUrl
+        }, { headers: corsHeaders });
     } catch (err: any) {
         return NextResponse.json(
             { success: false, error: err.message || 'Failed to upload image' },
-            { status: 500 }
+            { status: 500, headers: corsHeaders }
         );
     }
 }
-

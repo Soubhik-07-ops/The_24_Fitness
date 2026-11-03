@@ -1,57 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateAdminSession } from '@/lib/adminAuth';
+import { validateAdminSession, getAdminTokenFromRequest } from '@/lib/adminAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-    // Environment variables will be checked at runtime
-}
 
 const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', {
     auth: { autoRefreshToken: false, persistSession: false }
 });
 
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-admin-token',
+};
+
+export async function OPTIONS() {
+    return NextResponse.json({}, { headers: corsHeaders });
+}
+
 export async function POST(request: NextRequest) {
     try {
-        // Authenticate admin session from cookie
-        const token = request.cookies.get('admin_token')?.value;
+        // Authenticate admin session from Bearer header, x-admin-token, or cookie
+        const token = getAdminTokenFromRequest(request) || request.cookies.get('admin_token')?.value;
         if (!token) {
-            return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+            return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401, headers: corsHeaders });
         }
 
         const admin = await validateAdminSession(token);
         if (!admin) {
-            return NextResponse.json({ success: false, error: 'Invalid or expired admin session' }, { status: 401 });
+            return NextResponse.json({ success: false, error: 'Invalid or expired admin session' }, { status: 401, headers: corsHeaders });
         }
 
         // Get form data with file
         const formData = await request.formData();
         const file = formData.get('file') as File;
         const oldImageUrl = formData.get('oldImageUrl') as string | null;
-        const type = formData.get('type') as string; // 'trainer', 'admin', or 'class'
+        const type = (formData.get('type') as string) || 'admin'; // 'trainer', 'admin', or 'class'
 
         if (!file) {
-            return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400 });
+            return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400, headers: corsHeaders });
         }
 
-        if (!type || !['trainer', 'admin', 'class', 'payment-qr'].includes(type)) {
-            return NextResponse.json({ success: false, error: 'Invalid type. Must be trainer, admin, class, or payment-qr' }, { status: 400 });
+        if (!['trainer', 'admin', 'class', 'payment-qr'].includes(type)) {
+            return NextResponse.json({ success: false, error: 'Invalid type. Must be trainer, admin, class, or payment-qr' }, { status: 400, headers: corsHeaders });
         }
 
         // Validate file type
         if (!file.type.startsWith('image/')) {
-            return NextResponse.json({ success: false, error: 'File must be an image' }, { status: 400 });
+            return NextResponse.json({ success: false, error: 'File must be an image' }, { status: 400, headers: corsHeaders });
         }
 
         // Validate file size (5MB)
         if (file.size > 5 * 1024 * 1024) {
-            return NextResponse.json({ success: false, error: 'File size must be less than 5MB' }, { status: 400 });
+            return NextResponse.json({ success: false, error: 'File size must be less than 5MB' }, { status: 400, headers: corsHeaders });
         }
 
         // Determine bucket and folder based on type
-        const bucketName = 'class-images'; // Using the same bucket, organized by folders
+        const bucketName = 'class-images';
         let folderPath = '';
 
         if (type === 'trainer') {
@@ -79,7 +85,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Generate unique filename
-        const fileExt = file.name.split('.').pop();
+        const fileExt = file.name.split('.').pop() || 'jpg';
         const fileName = `${folderPath}${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
 
         // Convert File to ArrayBuffer for upload
@@ -96,7 +102,7 @@ export async function POST(request: NextRequest) {
             });
 
         if (uploadError) {
-            return NextResponse.json({ success: false, error: uploadError.message || 'Failed to upload image' }, { status: 500 });
+            return NextResponse.json({ success: false, error: uploadError.message || 'Failed to upload image' }, { status: 500, headers: corsHeaders });
         }
 
         // Get public URL
@@ -104,9 +110,22 @@ export async function POST(request: NextRequest) {
             .from(bucketName)
             .getPublicUrl(fileName);
 
-        return NextResponse.json({ success: true, imageUrl: publicUrl }, { status: 200 });
+        const cacheBustedUrl = `${publicUrl}?t=${Date.now()}`;
+
+        // If uploading an admin photo, also update admins table
+        if (type === 'admin' && admin.id) {
+            try {
+                await supabaseAdmin
+                    .from('admins')
+                    .update({ photo_url: cacheBustedUrl })
+                    .eq('id', admin.id);
+            } catch (adminErr) {
+                console.warn('[Admin Upload Photo] Non-fatal admin table update warning:', adminErr);
+            }
+        }
+
+        return NextResponse.json({ success: true, imageUrl: cacheBustedUrl, avatarUrl: cacheBustedUrl }, { status: 200, headers: corsHeaders });
     } catch (err: any) {
-        return NextResponse.json({ success: false, error: err.message || String(err) }, { status: 500 });
+        return NextResponse.json({ success: false, error: err.message || String(err) }, { status: 500, headers: corsHeaders });
     }
 }
-

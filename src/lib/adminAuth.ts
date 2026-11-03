@@ -32,6 +32,7 @@ export interface Admin {
     full_name: string | null;
     role: 'admin' | 'super_admin';
     is_active: boolean;
+    photo_url?: string | null;
 }
 
 export interface AdminSession {
@@ -166,6 +167,7 @@ export async function validateAdminSession(token: string): Promise<Admin | null>
                     email: adminData.email,
                     role: adminData.role,
                     full_name: adminData.full_name,
+            photo_url: adminData.photo_url || null,
                     is_active: true
                 };
             }
@@ -199,7 +201,7 @@ export async function validateAdminSession(token: string): Promise<Admin | null>
 
         const { data: adminData, error: adminError } = await serverSupabase
             .from('admins')
-            .select('id, email, full_name, role, is_active')
+            .select('id, email, full_name, role, is_active, photo_url')
             .eq('id', sessionData.admin_id)
             .single();
 
@@ -218,6 +220,7 @@ export async function validateAdminSession(token: string): Promise<Admin | null>
             email: adminData.email,
             role: adminData.role as 'admin' | 'super_admin',
             full_name: adminData.full_name,
+            photo_url: adminData.photo_url || null,
             is_active: true
         };
     } catch (error) {

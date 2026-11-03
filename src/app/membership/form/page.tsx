@@ -315,24 +315,35 @@ function MembershipFormContent() {
             setUser(session.user)
             setCheckingAuth(false)
 
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('full_name, email')
-                .eq('id', session.user.id)
-                .single()
+            const [{ data: profile }, { data: pastMems }] = await Promise.all([
+                supabase
+                    .from('profiles')
+                    .select('full_name, email, phone, date_of_birth, emergency_contact_name, emergency_contact_phone, fitness_goal')
+                    .eq('id', session.user.id)
+                    .maybeSingle(),
+                supabase
+                    .from('memberships')
+                    .select('form_data')
+                    .eq('user_id', session.user.id)
+                    .not('form_data', 'is', null)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+            ]);
 
-            if (profile) {
-                setFormData(prev => ({
-                    ...prev,
-                    email: profile.email || session.user.email || '',
-                    name: profile.full_name || ''
-                }))
-            } else {
-                setFormData(prev => ({
-                    ...prev,
-                    email: session.user.email || ''
-                }))
-            }
+            const pastFd = pastMems?.[0]?.form_data as any;
+            const resolvedEmergencyName = profile?.emergency_contact_name || pastFd?.emergencyContact || pastFd?.emergencyContactName || '';
+            const resolvedEmergencyPhone = profile?.emergency_contact_phone || pastFd?.emergencyPhone || pastFd?.emergencyContactPhone || '';
+
+            setFormData(prev => ({
+                ...prev,
+                email: profile?.email || session.user.email || prev.email || '',
+                name: profile?.full_name || prev.name || '',
+                phone: profile?.phone || prev.phone || '',
+                dateOfBirth: profile?.date_of_birth || prev.dateOfBirth || '',
+                emergencyContact: resolvedEmergencyName || prev.emergencyContact || '',
+                emergencyPhone: resolvedEmergencyPhone || prev.emergencyPhone || '',
+                dietaryGoals: profile?.fitness_goal || prev.dietaryGoals || ''
+            }));
         }
         checkUser()
     }, [router, planId, planType, planName, price, duration])

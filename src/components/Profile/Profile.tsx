@@ -159,8 +159,8 @@ export default function Profile() {
             const file = event.target.files?.[0];
             if (!file) return;
 
-            if (file.size > 400 * 1024) {
-                showToast('File size too large. Please choose an image under 400KB.', 'error');
+            if (file.size > 5 * 1024 * 1024) {
+                showToast('File size too large. Please choose an image under 5MB.', 'error');
                 return;
             }
 
@@ -462,7 +462,7 @@ export default function Profile() {
                         </div>
 
                         <div className={styles.fileInfo}>
-                            <p>Maximum file size: 400KB</p>
+                            <p>Maximum file size: 5MB</p>
                             <p>Supported formats: JPEG, PNG, WebP</p>
                         </div>
                     </div>
