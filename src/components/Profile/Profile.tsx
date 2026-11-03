@@ -11,6 +11,49 @@ import { validatePassword, getPasswordRequirements } from '@/lib/passwordValidat
 import Toast from '@/components/Toast/Toast';
 import { useToast } from '@/hooks/useToast';
 
+const compressImage = async (file: File, maxWidth = 1080, maxHeight = 1080, quality = 0.8): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            let { width, height } = img;
+            if (width > maxWidth || height > maxHeight) {
+                if (width > height) {
+                    height = Math.round((height * maxWidth) / width);
+                    width = maxWidth;
+                } else {
+                    width = Math.round((width * maxHeight) / height);
+                    height = maxHeight;
+                }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error('Canvas context unavailable'));
+                return;
+            }
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((blob) => {
+                if (!blob) {
+                    reject(new Error('Compression failed'));
+                    return;
+                }
+                resolve(blob);
+            }, 'image/jpeg', quality);
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('Image load failed'));
+        };
+        img.src = url;
+    });
+};
+
 export default function Profile() {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -160,10 +203,7 @@ export default function Profile() {
             const file = event.target.files?.[0];
             if (!file) return;
 
-            if (file.size > 5 * 1024 * 1024) {
-                showToast('File size too large. Please choose an image under 5MB.', 'error');
-                return;
-            }
+            // Size check removed - automatic client-side compression handles large camera images
 
             if (!file.type.startsWith('image/')) {
                 showToast('Please upload an image file (JPEG, PNG, WebP).', 'error');
@@ -179,16 +219,27 @@ export default function Profile() {
                 return;
             }
 
-            const fileExt = file.name.split('.').pop();
+            // Automatically compress large camera photos (e.g. 8.58 MB) to lightweight HD JPEG (~200KB)
+            let uploadBlob: Blob = file;
+            let fileExt = 'jpg';
+            try {
+                uploadBlob = await compressImage(file);
+            } catch (compErr) {
+                console.warn('Image auto-compression failed, using raw file:', compErr);
+                uploadBlob = file;
+                fileExt = file.name.split('.').pop() || 'jpg';
+            }
+
             const fileName = `${session.user.id}/${Date.now()}.${fileExt}`;
 
             await deleteExistingAvatar();
 
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
-                .upload(fileName, file, {
+                .upload(fileName, uploadBlob, {
                     cacheControl: '3600',
-                    upsert: false
+                    upsert: false,
+                    contentType: 'image/jpeg'
                 });
 
             if (uploadError) throw uploadError;
