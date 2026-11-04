@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateAdminSession } from '@/lib/adminAuth';
+import { validateAdminSession, getAdminTokenFromRequest } from '@/lib/adminAuth';
 import ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 
@@ -13,7 +13,7 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 export async function GET(request: NextRequest) {
     try {
         // Authenticate admin
-        const token = request.cookies.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }

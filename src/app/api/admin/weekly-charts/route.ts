@@ -1,7 +1,7 @@
 // src/app/api/admin/weekly-charts/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateAdminSession } from '@/lib/adminAuth';
+import { validateAdminSession, getAdminTokenFromRequest } from '@/lib/adminAuth';
 import { getChartResponsibility, needsWorkoutCharts, needsDietCharts } from '@/lib/chartResponsibility';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -14,7 +14,7 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 // GET: Fetch weekly charts for memberships without trainers
 export async function GET(request: NextRequest) {
     try {
-        const token = request.cookies.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }
@@ -192,7 +192,7 @@ export async function GET(request: NextRequest) {
 // POST: Create a new weekly chart (admin)
 export async function POST(request: NextRequest) {
     try {
-        const token = request.cookies.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }

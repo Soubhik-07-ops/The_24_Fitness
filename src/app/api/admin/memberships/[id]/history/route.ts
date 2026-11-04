@@ -1,7 +1,7 @@
 // API route to get complete membership history
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateAdminSession } from '@/lib/adminAuth';
+import { validateAdminSession, getAdminTokenFromRequest } from '@/lib/adminAuth';
 import { detectPaymentType } from '@/lib/paymentTypeDetection';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -16,7 +16,7 @@ export async function GET(
     context: { params: Promise<{ id: string }> }
 ) {
     try {
-        const token = request.cookies.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }

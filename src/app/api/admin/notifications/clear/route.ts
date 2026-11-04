@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateAdminSession } from '@/lib/adminAuth';
+import { validateAdminSession, getAdminTokenFromRequest } from '@/lib/adminAuth';
 import { logger } from '@/lib/logger';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,7 +13,7 @@ const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceKey || '', 
 // Delete all admin notifications
 export async function DELETE(request: NextRequest) {
     try {
-        const token = request.cookies.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }
@@ -48,7 +48,7 @@ export async function DELETE(request: NextRequest) {
 // Delete a single admin notification
 export async function POST(request: NextRequest) {
     try {
-        const token = request.cookies.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }

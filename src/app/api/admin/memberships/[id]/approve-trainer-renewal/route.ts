@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateAdminSession } from '@/lib/adminAuth';
+import { validateAdminSession, getAdminTokenFromRequest } from '@/lib/adminAuth';
 import { calculateTrainerRenewalEndDate } from '@/lib/trainerRenewalEligibility';
 import { logAuditEvent } from '@/lib/auditLog';
 // Invoice generation will be called directly via route handler to avoid HTTP fetch issues
@@ -30,7 +30,7 @@ export async function POST(
     context: { params: Promise<{ id: string }> }
 ) {
     try {
-        const token = request.cookies.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request);
         if (!token) {
             return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
         }

@@ -22,7 +22,7 @@ export async function OPTIONS() {
 export async function POST(request: NextRequest) {
     try {
         // Authenticate admin session from Bearer header, x-admin-token, or cookie
-        const token = getAdminTokenFromRequest(request) || request.cookies.get('admin_token')?.value;
+        const token = getAdminTokenFromRequest(request) || getAdminTokenFromRequest(request);
         if (!token) {
             return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401, headers: corsHeaders });
         }

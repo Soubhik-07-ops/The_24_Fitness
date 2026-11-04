@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
         const sevenDaysFromNowMs = nowMs + 7 * 24 * 60 * 60 * 1000;
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
+        const todayStr = now.toISOString().split('T')[0];
 
         // Fetch all stats authoritative data
         const [
@@ -49,18 +50,21 @@ export async function GET(request: NextRequest) {
             { count: totalClasses, error: classesError },
             { data: reviewsData, error: reviewsError },
             { data: membershipsData, error: membershipsError },
-            { data: paymentsData, error: paymentsError }
+            { data: paymentsData, error: paymentsError },
+            { data: attendanceData, error: attendanceError }
         ] = await Promise.all([
             supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }),
             supabaseAdmin.from('classes').select('*', { count: 'exact', head: true }),
             supabaseAdmin.from('reviews').select('*'),
             supabaseAdmin.from('memberships').select('id, user_id, status, membership_end_date, end_date, price, created_at'),
-            supabaseAdmin.from('membership_payments').select('id, membership_id, amount, status, payment_date, created_at')
+            supabaseAdmin.from('membership_payments').select('id, membership_id, amount, status, payment_date, created_at'),
+            supabaseAdmin.from('attendance_records').select('id, shift').eq('date', todayStr)
         ]);
 
         if (usersError) console.error('Error fetching totalUsers:', usersError);
         if (membershipsError) console.error('Error fetching memberships:', membershipsError);
         if (paymentsError) console.error('Error fetching payments:', paymentsError);
+        if (attendanceError) console.error('Error fetching attendance:', attendanceError);
 
         const memberships = membershipsData || [];
         const payments = paymentsData || [];
@@ -132,6 +136,10 @@ export async function GET(request: NextRequest) {
             ? (uniqueUsersWithReviews.size / (totalUsers || 1)) * 100
             : 0;
 
+        const todayAttendance = attendanceData?.length || 0;
+        const morningShiftAttendance = attendanceData?.filter((a: any) => (a.shift || '').toUpperCase() === 'MORNING').length || 0;
+        const eveningShiftAttendance = attendanceData?.filter((a: any) => (a.shift || '').toUpperCase() === 'EVENING').length || 0;
+
         const stats = {
             totalUsers: totalUsers || 0,
             activeMembers: activeList.length,
@@ -139,6 +147,9 @@ export async function GET(request: NextRequest) {
             gracePeriodCount: graceList.length,
             pendingPayments: pendingCount,
             expiringMembers: expiringList.length,
+            todayAttendance,
+            morningShiftAttendance,
+            eveningShiftAttendance,
             monthlyRevenue,
             totalLifetimeRevenue,
             totalClasses: totalClasses || 0,
